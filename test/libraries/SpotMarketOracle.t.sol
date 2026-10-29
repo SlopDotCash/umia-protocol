@@ -17,6 +17,10 @@ contract SpotMarketOracleHarness {
         (cardinality, cardinalityNext) = observations.initialize(time, tick);
     }
 
+    function grow(uint16 next) external {
+        cardinalityNext = observations.grow(cardinalityNext, next);
+    }
+
     function write(uint32 time, int24 tick) external {
         (index, cardinality, tickAreaRemainder) =
             observations.write(index, time, tick, 1, cardinality, cardinalityNext, tickAreaRemainder);
@@ -24,6 +28,19 @@ contract SpotMarketOracleHarness {
 
     function observeNow(uint32 time, int24 tick) external view returns (int48 tickCumulative) {
         (tickCumulative,) = observations.observeSingle(time, 0, tick, index, 1, cardinality, tickAreaRemainder);
+    }
+
+    function observeAgo(uint32 time, uint32 secondsAgo, int24 tick) external view returns (int48 tickCumulative) {
+        (tickCumulative,) = observations.observeSingle(time, secondsAgo, tick, index, 1, cardinality, tickAreaRemainder);
+    }
+
+    function observeAgoLiquidity(uint32 time, uint32 secondsAgo, int24 tick)
+        external
+        view
+        returns (uint144 secondsPerLiquidityCumulativeX128)
+    {
+        (, secondsPerLiquidityCumulativeX128) =
+            observations.observeSingle(time, secondsAgo, tick, index, 1, cardinality, tickAreaRemainder);
     }
 
     function latest()
@@ -40,6 +57,47 @@ contract SpotMarketOracleSlewTest is Test {
     int24 internal constant MIN_TICK = -887_272;
     int24 internal constant MAX_TICK = 887_272;
     uint32 internal constant T0 = 1_000_000;
+
+    /// @notice A target between two observations is read off the straight line between them. After a
+    ///         ramp the cumulative delta is not a multiple of the time delta, and dividing before
+    ///         multiplying truncated the slope for the whole interval (audit L-06).
+    function test_InterpolationKeepsTheSlope() public {
+        SpotMarketOracleHarness oracle = new SpotMarketOracleHarness();
+        oracle.initialize(T0, 0);
+        oracle.grow(4);
+        // The ramp from 0 to 1999 sits inside the first interval; read its start, middle and end.
+        oracle.write(T0 + 1000, 1999);
+        int48 startCumulative = oracle.observeAgo(T0 + 1000, 1000, 1999);
+        int48 endCumulative = oracle.observeAgo(T0 + 1000, 0, 1999);
+        int48 delta = endCumulative - startCumulative;
+        assertTrue(delta % 1000 != 0, "the ramp leaves a fractional slope");
+        int48 mid = oracle.observeAgo(T0 + 1000, 500, 1999);
+        assertEq(mid - startCumulative, delta * 500 / 1000);
+        assertApproxEqAbs(int256(mid) * 2, int256(startCumulative) + int256(endCumulative), 1);
+    }
+
+    /// @notice Both cumulatives wrap at their own width; interpolating across a wrap must take the
+    ///         delta at that width, not after widening.
+    function test_InterpolationAcrossCumulativeWrap() public {
+        SpotMarketOracleHarness oracle = new SpotMarketOracleHarness();
+        // Liquidity 1 adds 2^128 per second, so the uint144 cumulative wraps every 65,536 seconds.
+        oracle.initialize(T0, 0);
+        oracle.grow(4);
+        oracle.write(T0 + 65_534, 0);
+        oracle.write(T0 + 65_538, 0);
+        assertEq(oracle.observeAgoLiquidity(T0 + 65_538, 2, 0), 0, "midpoint sits exactly on the wrap");
+        assertEq(oracle.observeAgoLiquidity(T0 + 65_538, 3, 0), uint144(65_535) << 128);
+
+        // At MAX_TICK the int48 tick cumulative wraps after about 158.6 million seconds; the second
+        // observation sits past that point, the first just before it.
+        SpotMarketOracleHarness ticks = new SpotMarketOracleHarness();
+        ticks.initialize(T0, MAX_TICK);
+        ticks.grow(4);
+        ticks.write(T0 + 158_000_000, MAX_TICK);
+        ticks.write(T0 + 160_000_000, MAX_TICK);
+        assertGt(int256(MAX_TICK) * 160_000_000, int256(type(int48).max), "the second write is past the wrap");
+        assertEq(ticks.observeAgo(T0 + 160_000_000, 1_000_000, MAX_TICK), int48(int256(MAX_TICK) * 159_000_000));
+    }
 
     function test_TwoSecondAllowanceMatchesFormerPerObservationCap() public {
         SpotMarketOracleHarness oracle = new SpotMarketOracleHarness();

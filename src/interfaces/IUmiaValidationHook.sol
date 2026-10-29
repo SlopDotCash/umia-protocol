@@ -3,38 +3,27 @@ pragma solidity ^0.8.24;
 
 import {IGatedValidationHook} from "./IGatedValidationHook.sol";
 import {IMaxBidPriceValidationHook} from "./IMaxBidPriceValidationHook.sol";
+import {IVerifyEveryBidHook} from "./IVerifyEveryBidHook.sol";
 
 /// @title IUmiaValidationHook
 /// @notice CIP-1 custom interface for {UmiaValidationHook}: the permissionless surface an
-///         integrator needs to read a gated auction's gating config and relay zkTLS proofs.
+///         integrator needs to read a gated auction's gating config.
 /// @dev Advertised via ERC165 `supportsInterface` alongside `IValidationHook` and `IERC165`.
 ///      Owner-only administration is deliberately left out: it is an ops surface, not something
 ///      a caller discovers, and keeping it out means routine admin changes cannot shift the
-///      interface ID that integrators key off. Inheriting `IMaxBidPriceValidationHook` and
-///      `IGatedValidationHook` does not move this ID either: Solidity excludes inherited
-///      selectors from `type().interfaceId`.
-interface IUmiaValidationHook is IMaxBidPriceValidationHook, IGatedValidationHook {
+///      interface ID that integrators key off. Inheriting `IMaxBidPriceValidationHook`,
+///      `IGatedValidationHook` and `IVerifyEveryBidHook` does not move this ID either: Solidity
+///      excludes inherited selectors from `type().interfaceId`.
+interface IUmiaValidationHook is IMaxBidPriceValidationHook, IGatedValidationHook, IVerifyEveryBidHook {
     /// @notice A cached auction step, as a half-open block range.
     struct BlockRange {
         uint64 startBlock; // inclusive
         uint64 endBlock; // exclusive
     }
 
-    /// @notice Submit a zkTLS proof for a user. Permissionless — anyone can relay a valid proof.
-    /// @param user The user address the proof is for
-    /// @param stepIndex The step to register verification from
-    /// @param proofData ABI-encoded Reclaim.Proof
-    function submitProof(address user, uint256 stepIndex, bytes calldata proofData) external;
-
-    /// @notice Batch submit proofs for multiple users. Permissionless.
-    /// @param users Array of user addresses
-    /// @param stepIndex The step to register verification from
-    /// @param proofDataArray Array of ABI-encoded Reclaim.Proof (one per user)
-    function submitProofBatch(address[] calldata users, uint256 stepIndex, bytes[] calldata proofDataArray) external;
-
-    /// @notice Returns the user that currently owns a given (provider, identity) slot,
+    /// @notice Returns the user that currently owns a canonical identity key,
     ///         or address(0) if unclaimed.
-    function identityOwner(bytes32 providerHash, bytes32 identityHash) external view returns (address);
+    function identityOwner(bytes32 identityHash) external view returns (address);
 
     /// @notice Returns true if a server-permit nonce has already been consumed.
     function isPermitNonceUsed(bytes32 nonce) external view returns (bool);

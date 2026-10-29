@@ -27,6 +27,7 @@ encoded `ExecutionPlanV1`, so existing values must never be reordered.
 - `CALL`
 - `UPGRADE_IMPLEMENTATION`
 - `SET_ALLOWANCE`
+- `SET_ALLOWANCE_SOURCE`
 
 ## AssetType enum
 

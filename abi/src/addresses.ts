@@ -11,8 +11,8 @@ export type ChainAddresses = {
   startBlock: number;
   umia: Record<string, string>;
   uniswap?: Record<string, string>;
-  usdc?: string;
-  usdcDecimals?: number;
+  moneyToken?: string;
+  moneyTokenDecimals?: number;
 };
 
 const asChains = (env: Environment) =>

@@ -1,6 +1,6 @@
 # Contract Reference Index
 
-These references describe **current contracts in `smart-contracts/src`**.
+These references describe the current contracts in `src/`.
 
 ## Core
 
@@ -8,6 +8,16 @@ These references describe **current contracts in `smart-contracts/src`**.
 - [Venture](./Venture.md)
 - [UmiaMarketCore](./UmiaMarketCore.md)
 - [GovernanceExecutor](./GovernanceExecutor.md)
+
+## V2 spot liquidity
+
+The V2 spot liquidity release. New launches land here once the Hub's launch factory points at `UmiaLBPFactoryV2`; ventures on V1 move here through a migration proposal.
+
+- [UmiaHookV2](./UmiaHookV2.md)
+- [SpotLiquidityVaultV2](./SpotLiquidityVaultV2.md)
+- [ActiveLiquidityManager](./ActiveLiquidityManager.md)
+- [SpotMigrator](./SpotMigrator.md)
+- [UmiaLBPV2 / UmiaLBPFactoryV2](./UmiaLBPV2.md)
 
 ## Periphery
 

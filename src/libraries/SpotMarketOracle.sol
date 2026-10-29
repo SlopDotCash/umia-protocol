@@ -8,6 +8,8 @@ pragma solidity ^0.8.26;
 // Distributed under the MIT License; the permission notice is reproduced in
 // smart-contracts/licenses/MIT_LICENSE.
 
+import {TickSlew} from "./TickSlew.sol";
+
 /// @title Oracle
 /// @notice Provides price and liquidity data useful for a wide variety of system designs
 /// @dev Instances of stored oracle data, "observations", are collected in the oracle array
@@ -16,6 +18,11 @@ pragma solidity ^0.8.26;
 /// Observations are overwritten when the full length of the oracle array is populated.
 /// The most recent observation is available, independent of the length of the oracle array, by passing 0 to observe()
 library SpotMarketOracle {
+    /// @notice Rate at which the accepted tick can approach the pool tick.
+    /// @dev 4,558 ticks/second preserves the former 9,116-tick allowance over a 2-second Base block,
+    ///      while making the bound depend on elapsed time rather than the number of observations.
+    uint24 internal constant TICK_SLEW_PER_SECOND = 4558;
+
     /// @notice Thrown when trying to interact with an Oracle of a non-initialized pool
     error OracleCardinalityCannotBeZero();
 
@@ -23,15 +30,6 @@ library SpotMarketOracle {
     /// @param oldestTimestamp Timestamp of the oldest remaining observation
     /// @param targetTimestamp Invalid timestamp targeted to be observed
     error TargetPredatesOldestObservation(uint32 oldestTimestamp, uint32 targetTimestamp);
-
-    /// @notice Maximum rate at which the oracle's accepted tick can approach the pool tick.
-    /// @dev 4,558 ticks/second preserves the former 9,116-tick allowance over a 2-second Base block,
-    ///      while making the bound depend on elapsed time rather than the number of observations.
-    uint24 constant MAX_TICK_SLEW_PER_SECOND = 4558;
-
-    /// @dev Tick-area values are carried at this scale so a linear ramp can be integrated exactly
-    ///      across any partitioning of the same time interval.
-    uint24 constant TICK_AREA_SCALE = 2 * MAX_TICK_SLEW_PER_SECOND;
 
     struct Observation {
         // the block timestamp of the observation
@@ -47,7 +45,7 @@ library SpotMarketOracle {
     }
 
     /// @notice Advances the accepted tick toward the pool tick and integrates its continuous path.
-    /// @dev The accepted tick moves linearly at `MAX_TICK_SLEW_PER_SECOND` until it reaches `tick`,
+    /// @dev The accepted tick moves linearly at `TICK_SLEW_PER_SECOND` until it reaches `tick`,
     ///      then remains there for the rest of the interval. `tickAreaRemainder` carries the exact
     ///      fractional tick-seconds between writes, making the result independent of write cadence.
     /// @dev blockTimestamp _must_ be chronologically equal to or greater than last.blockTimestamp, safe for 0 or 1 overflows
@@ -69,7 +67,7 @@ library SpotMarketOracle {
             uint32 delta = blockTimestamp - last.blockTimestamp;
             int48 tickCumulativeDelta;
             (tick, tickCumulativeDelta, tickAreaRemainderUpdated) =
-                advanceTick(last.prevTick, tick, delta, tickAreaRemainder);
+                TickSlew.advance(last.prevTick, tick, delta, tickAreaRemainder, TICK_SLEW_PER_SECOND);
 
             next = Observation({
                 blockTimestamp: blockTimestamp,
@@ -79,42 +77,6 @@ library SpotMarketOracle {
                     + ((uint144(delta) << 128) / (liquidity > 0 ? liquidity : 1)),
                 initialized: true
             });
-        }
-    }
-
-    /// @dev Integrates a linear slew followed by a hold, returning whole tick-seconds plus carry.
-    ///      The scaled area is `(start + end) * travel + 2 * end * (rate * dt - travel)`.
-    function advanceTick(int24 previousTick, int24 targetTick, uint32 delta, uint16 tickAreaRemainder)
-        private
-        pure
-        returns (int24 nextTick, int48 tickCumulativeDelta, uint16 tickAreaRemainderUpdated)
-    {
-        unchecked {
-            int256 tickDelta = int256(targetTick) - int256(previousTick);
-            uint256 distance = uint256(tickDelta < 0 ? -tickDelta : tickDelta);
-            uint256 travelBudget = uint256(MAX_TICK_SLEW_PER_SECOND) * delta;
-            uint256 travel = distance < travelBudget ? distance : travelBudget;
-
-            int256 next = int256(previousTick);
-            if (tickDelta > 0) next += int256(travel);
-            else if (tickDelta < 0) next -= int256(travel);
-
-            int256 tickAreaNumerator = (int256(previousTick) + next) * int256(travel) + 2 * next
-                * int256(travelBudget - travel) + int256(uint256(tickAreaRemainder));
-
-            int256 scale = int256(uint256(TICK_AREA_SCALE));
-            int256 wholeTickArea = tickAreaNumerator / scale;
-            int256 remainder = tickAreaNumerator % scale;
-            // Solidity truncates signed division toward zero. Convert it to floor division so the
-            // remainder is canonical in [0, scale), even when the accumulated path crosses zero.
-            if (remainder < 0) {
-                wholeTickArea--;
-                remainder += scale;
-            }
-
-            nextTick = int24(next);
-            tickCumulativeDelta = int48(wholeTickArea);
-            tickAreaRemainderUpdated = uint16(uint256(remainder));
         }
     }
 
@@ -378,34 +340,38 @@ library SpotMarketOracle {
             }
 
             uint32 target = time - secondsAgo;
-
             (Observation memory beforeOrAt, Observation memory atOrAfter) =
                 getSurroundingObservations(self, time, target, tick, index, liquidity, cardinality, tickAreaRemainder);
 
             if (target == beforeOrAt.blockTimestamp) {
-                // we're at the left boundary
                 return (beforeOrAt.tickCumulative, beforeOrAt.secondsPerLiquidityCumulativeX128);
-            } else if (target == atOrAfter.blockTimestamp) {
-                // we're at the right boundary
-                return (atOrAfter.tickCumulative, atOrAfter.secondsPerLiquidityCumulativeX128);
-            } else {
-                // we're in the middle
-                uint32 observationTimeDelta = atOrAfter.blockTimestamp - beforeOrAt.blockTimestamp;
-                uint32 targetDelta = target - beforeOrAt.blockTimestamp;
-                return (
-                    beforeOrAt.tickCumulative
-                        + ((atOrAfter.tickCumulative - beforeOrAt.tickCumulative) / int48(uint48(observationTimeDelta)))
-                        * int48(uint48(targetDelta)),
-                    beforeOrAt.secondsPerLiquidityCumulativeX128
-                        + uint144(
-                            (uint256(
-                                        atOrAfter.secondsPerLiquidityCumulativeX128
-                                            - beforeOrAt.secondsPerLiquidityCumulativeX128
-                                    )
-                                    * targetDelta) / observationTimeDelta
-                        )
-                );
             }
+            if (target == atOrAfter.blockTimestamp) {
+                return (atOrAfter.tickCumulative, atOrAfter.secondsPerLiquidityCumulativeX128);
+            }
+            return interpolate(beforeOrAt, atOrAfter, target);
+        }
+    }
+
+    /// @dev Both cumulatives on the straight line between two observations, at a `target` strictly
+    ///      between them. Multiplies before dividing: after a ramp the cumulative delta is not a
+    ///      multiple of the time delta, and dividing first would truncate the slope for the whole
+    ///      interval. The deltas are taken at the cumulatives' own width, since both are allowed to
+    ///      wrap and only the difference is meaningful.
+    function interpolate(Observation memory beforeOrAt, Observation memory atOrAfter, uint32 target)
+        internal
+        pure
+        returns (int48 tickCumulative, uint144 secondsPerLiquidityCumulativeX128)
+    {
+        unchecked {
+            uint256 span = atOrAfter.blockTimestamp - beforeOrAt.blockTimestamp;
+            uint256 elapsed = target - beforeOrAt.blockTimestamp;
+            int256 tickDelta = int256(atOrAfter.tickCumulative - beforeOrAt.tickCumulative);
+            uint256 liquidityDelta =
+                uint256(atOrAfter.secondsPerLiquidityCumulativeX128 - beforeOrAt.secondsPerLiquidityCumulativeX128);
+            tickCumulative = beforeOrAt.tickCumulative + int48(tickDelta * int256(elapsed) / int256(span));
+            secondsPerLiquidityCumulativeX128 =
+                beforeOrAt.secondsPerLiquidityCumulativeX128 + uint144(liquidityDelta * elapsed / span);
         }
     }
 

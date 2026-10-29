@@ -6,10 +6,11 @@
 #
 # Usage: ./verify-runtime.sh <address> <path:Name> [extra forge args...]
 set -euo pipefail
+cd "$(dirname "$0")"
 ADDR=$1; FQN=$2; shift 2
 SRC=${FQN%%:*}; NAME=${FQN##*:}
 ART="out/$(basename "$SRC")/$NAME.json"
-[ -f "$ART" ] || { echo "artifact $ART not found — run just forge build"; exit 1; }
+[ -f "$ART" ] || { echo "artifact $ART not found; run forge build"; exit 1; }
 
 TXHASH=$(curl -s "https://api.etherscan.io/v2/api?chainid=8453&module=contract&action=getcontractcreation&contractaddresses=$ADDR&apikey=$ETHERSCAN_API_KEY" | jq -r '.result[0].txHash')
 [ "$TXHASH" != "null" ] || { echo "no creation tx found for $ADDR"; exit 1; }
@@ -23,7 +24,7 @@ case "$IN" in
   *)
       REST=${IN#*"$CODE"}
       [ "$REST" = "$IN" ] && { echo "local bytecode not found in creation tx (build drift?)"; exit 1; }
-      echo "factory deploy — trailing calldata after embedded creation code:"
+      echo "factory deploy: trailing calldata after embedded creation code:"
       printf '%s\n' "$REST" | head -c 512; echo
       CTOR=$REST
       ;;

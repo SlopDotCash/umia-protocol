@@ -4,19 +4,23 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 
 import {SimpleLiquidator} from "../../src/liquidation/SimpleLiquidator.sol";
+import {ILiquidator} from "../../src/interfaces/ILiquidator.sol";
 import {IVenture} from "../../src/interfaces/IVenture.sol";
 import {Venture} from "../../src/core/Venture.sol";
 import {VentureToken} from "../../src/tokens/VentureToken.sol";
 import {GovernanceTypes} from "../../src/libraries/GovernanceTypes.sol";
+import {GovernanceActions} from "../../src/libraries/GovernanceActions.sol";
 import {UmiaHub} from "../../src/core/UmiaHub.sol";
 import {GovernanceExecutor} from "../../src/core/GovernanceExecutor.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 
 /// @notice Regression tests for the liquidation pro-rata accounting fixes.
-///  - #104039: treasury-held venture tokens (e.g. the venture's redeemed spot-LP share) must be
-///    excluded from the claim denominator, otherwise a matching fraction of every liquidation asset
+///  - #104039: treasury-held venture tokens (e.g. the venture's redeemed spot-LP share) must not
+///    count in the claim denominator, otherwise a matching fraction of every liquidation asset
 ///    strands in the treasury forever because the treasury can never call claim().
+///  - #2901: they are burned rather than excluded, so a standing venture-token approval cannot move
+///    them into circulation after the snapshot and over-draw every holder.
 ///  - #104007: the venture (claim-burn) token must never be a distributable liquidation asset, so a
 ///    claimant cannot forward a venture-token payout to fresh addresses and claim again to over-draw.
 contract LiquidationAccountingFixTest is Test {
@@ -25,6 +29,7 @@ contract LiquidationAccountingFixTest is Test {
     address internal team1 = makeAddr("team1");
     address internal bob = makeAddr("bob");
     address internal alice = makeAddr("alice");
+    address internal spender = makeAddr("spender");
 
     UmiaHub internal hub;
     GovernanceExecutor internal executor;
@@ -97,16 +102,17 @@ contract LiquidationAccountingFixTest is Test {
             GovernanceTypes.LiquidationAsset({assetType: GovernanceTypes.AssetType.ERC20, token: token, tokenId: 0});
     }
 
-    /// #104039: treasury-held venture tokens are excluded from the denominator, so the sole external
+    /// #104039: treasury-held venture tokens are burned out of the denominator, so the sole external
     /// holder redeems the FULL asset balance instead of being diluted by non-claimable treasury supply.
-    function test_treasuryHeldSupplyExcludedFromDenominator() public {
+    function test_treasuryHeldSupplyBurnedBeforeSnapshot() public {
         _mint(bob, 100e18); // circulating
         _mint(address(venture), 100e18); // treasury-held (e.g. redeemed vault LP) — can never claim
         assetToken.mint(address(venture), 1000e18);
 
         _startLiquidation(_erc20Asset(address(assetToken)));
 
-        // Denominator is claimable supply (100e18), not raw total supply (200e18).
+        assertEq(qToken.balanceOf(address(venture)), 0, "treasury-held supply burned");
+        assertEq(qToken.totalSupply(), 100e18, "only circulating supply remains");
         assertEq(liquidator.totalSupplySnapshot(), 100e18, "denominator excludes treasury-held supply");
 
         vm.prank(bob);
@@ -162,5 +168,40 @@ contract LiquidationAccountingFixTest is Test {
 
         assertEq(assetToken.balanceOf(bob), 500e18, "bob 50%");
         assertEq(assetToken.balanceOf(alice), 500e18, "alice 50%");
+    }
+
+    /// #2901: a standing approval on the venture token cannot pull treasury-held venture tokens into
+    /// circulation after the snapshot, so the legitimate holder's claim is not diluted.
+    function test_standingVentureTokenApprovalCannotOverdraw() public {
+        _mint(bob, 100e18);
+        _mint(address(venture), 100e18);
+        assetToken.mint(address(venture), 1000e18);
+
+        vm.prank(address(executor));
+        venture.setAllowance(address(qToken), spender, type(uint256).max);
+
+        _startLiquidation(_erc20Asset(address(assetToken)));
+
+        assertEq(qToken.balanceOf(address(venture)), 0, "treasury-held supply burned");
+        vm.prank(spender);
+        vm.expectRevert();
+        qToken.transferFrom(address(venture), spender, 100e18);
+
+        vm.prank(spender);
+        vm.expectRevert(ILiquidator.NothingToClaim.selector);
+        liquidator.claim();
+
+        vm.prank(bob);
+        liquidator.claim();
+        assertEq(assetToken.balanceOf(bob), 1000e18, "legitimate holder redeems full asset balance");
+    }
+
+    /// With every venture token held by the treasury there is no one to claim, so liquidation reverts.
+    function test_noCirculatingSupply_reverts() public {
+        _mint(address(venture), 100e18);
+        assetToken.mint(address(venture), 1000e18);
+
+        vm.expectRevert(GovernanceActions.InvalidParams.selector);
+        _startLiquidation(_erc20Asset(address(assetToken)));
     }
 }

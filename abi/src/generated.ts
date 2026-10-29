@@ -1,4 +1,630 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ActiveLiquidityManager
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const activeLiquidityManagerAbi = [
+  {
+    type: 'constructor',
+    inputs: [
+      { name: '_hub', internalType: 'address', type: 'address' },
+      { name: '_venture', internalType: 'address', type: 'address' },
+      { name: '_poolManager', internalType: 'address', type: 'address' },
+      { name: '_hook', internalType: 'address', type: 'address' },
+      { name: '_fee', internalType: 'uint24', type: 'uint24' },
+      { name: '_tickSpacing', internalType: 'int24', type: 'int24' },
+      { name: '_bootstrapper', internalType: 'address', type: 'address' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'HUB',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'MAX_POSITIONS',
+    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'marketId', internalType: 'uint256', type: 'uint256' },
+      { name: 'sellToMarkets', internalType: 'bool', type: 'bool' },
+      { name: 'size', internalType: 'uint256', type: 'uint256' },
+      { name: 'outFractionWad', internalType: 'uint256', type: 'uint256' },
+      { name: 'sqrtPriceLimitX96', internalType: 'uint160', type: 'uint160' },
+      { name: 'minMoneyProfit', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'basketArb',
+    outputs: [
+      { name: 'moneyProfit', internalType: 'uint256', type: 'uint256' },
+      { name: 'ventureGain', internalType: 'uint256', type: 'uint256' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'bootstrapper',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'marketId', internalType: 'uint256', type: 'uint256' }],
+    name: 'claimDecisionMarket',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'claimProtocolFees',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'collectFees',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'constraints',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct IActiveLiquidityManager.Constraints',
+        type: 'tuple',
+        components: [
+          { name: 'maxPositions', internalType: 'uint8', type: 'uint8' },
+          { name: 'minWidthTicks', internalType: 'int24', type: 'int24' },
+          { name: 'maxWidthTicks', internalType: 'int24', type: 'int24' },
+          {
+            name: 'minRebalanceInterval',
+            internalType: 'uint32',
+            type: 'uint32',
+          },
+          {
+            name: 'maxTwapDeviationTicks',
+            internalType: 'int24',
+            type: 'int24',
+          },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'ventureAmount', internalType: 'uint256', type: 'uint256' },
+      { name: 'moneyAmount', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'defund',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getPoolKey',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'hook',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'keeper',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'lastRebalance',
+    outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'maxTwapDeviationCap',
+    outputs: [{ name: '', internalType: 'int24', type: 'int24' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'moneyToken',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'paused',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'poolManager',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'positions',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct IActiveLiquidityManager.Position[]',
+        type: 'tuple[]',
+        components: [
+          { name: 'tickLower', internalType: 'int24', type: 'int24' },
+          { name: 'tickUpper', internalType: 'int24', type: 'int24' },
+          { name: 'liquidity', internalType: 'uint128', type: 'uint128' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'protocolOwedMoney',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'protocolOwedVenture',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'target',
+        internalType: 'struct IActiveLiquidityManager.Position[]',
+        type: 'tuple[]',
+        components: [
+          { name: 'tickLower', internalType: 'int24', type: 'int24' },
+          { name: 'tickUpper', internalType: 'int24', type: 'int24' },
+          { name: 'liquidity', internalType: 'uint128', type: 'uint128' },
+        ],
+      },
+    ],
+    name: 'rebalance',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'target',
+        internalType: 'struct IActiveLiquidityManager.Position[]',
+        type: 'tuple[]',
+        components: [
+          { name: 'tickLower', internalType: 'int24', type: 'int24' },
+          { name: 'tickUpper', internalType: 'int24', type: 'int24' },
+          { name: 'liquidity', internalType: 'uint128', type: 'uint128' },
+        ],
+      },
+    ],
+    name: 'seed',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'newConstraints',
+        internalType: 'struct IActiveLiquidityManager.Constraints',
+        type: 'tuple',
+        components: [
+          { name: 'maxPositions', internalType: 'uint8', type: 'uint8' },
+          { name: 'minWidthTicks', internalType: 'int24', type: 'int24' },
+          { name: 'maxWidthTicks', internalType: 'int24', type: 'int24' },
+          {
+            name: 'minRebalanceInterval',
+            internalType: 'uint32',
+            type: 'uint32',
+          },
+          {
+            name: 'maxTwapDeviationTicks',
+            internalType: 'int24',
+            type: 'int24',
+          },
+        ],
+      },
+    ],
+    name: 'setConstraints',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'newKeeper', internalType: 'address', type: 'address' }],
+    name: 'setKeeper',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'newPaused', internalType: 'bool', type: 'bool' }],
+    name: 'setPaused',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'totalAssets',
+    outputs: [
+      { name: 'ventureAssets', internalType: 'uint256', type: 'uint256' },
+      { name: 'moneyAssets', internalType: 'uint256', type: 'uint256' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'data', internalType: 'bytes', type: 'bytes' }],
+    name: 'unlockCallback',
+    outputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'venture',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'ventureIsToken0',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'ventureToken',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'withdrawAll',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'marketId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'sellToMarkets',
+        internalType: 'bool',
+        type: 'bool',
+        indexed: false,
+      },
+      {
+        name: 'size',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'outFractionWad',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'moneyProfit',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'ventureGain',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'BasketArb',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'constraints',
+        internalType: 'struct IActiveLiquidityManager.Constraints',
+        type: 'tuple',
+        components: [
+          { name: 'maxPositions', internalType: 'uint8', type: 'uint8' },
+          { name: 'minWidthTicks', internalType: 'int24', type: 'int24' },
+          { name: 'maxWidthTicks', internalType: 'int24', type: 'int24' },
+          {
+            name: 'minRebalanceInterval',
+            internalType: 'uint32',
+            type: 'uint32',
+          },
+          {
+            name: 'maxTwapDeviationTicks',
+            internalType: 'int24',
+            type: 'int24',
+          },
+        ],
+        indexed: false,
+      },
+    ],
+    name: 'ConstraintsSet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'marketId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'ventureAmount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'moneyAmount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'DecisionMarketClaimed',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'ventureAmount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'moneyAmount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'Defunded',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'ventureToVenture',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'moneyToVenture',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'ventureToProtocol',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'moneyToProtocol',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'FeesCollected',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'keeper',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+    ],
+    name: 'KeeperSet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'by', internalType: 'address', type: 'address', indexed: true },
+      { name: 'paused', internalType: 'bool', type: 'bool', indexed: false },
+    ],
+    name: 'PausedSet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'recipient',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'ventureAmount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'moneyAmount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'ProtocolFeesClaimed',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'keeper',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'positions',
+        internalType: 'struct IActiveLiquidityManager.Position[]',
+        type: 'tuple[]',
+        components: [
+          { name: 'tickLower', internalType: 'int24', type: 'int24' },
+          { name: 'tickUpper', internalType: 'int24', type: 'int24' },
+          { name: 'liquidity', internalType: 'uint128', type: 'uint128' },
+        ],
+        indexed: false,
+      },
+    ],
+    name: 'Rebalanced',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'positions',
+        internalType: 'struct IActiveLiquidityManager.Position[]',
+        type: 'tuple[]',
+        components: [
+          { name: 'tickLower', internalType: 'int24', type: 'int24' },
+          { name: 'tickUpper', internalType: 'int24', type: 'int24' },
+          { name: 'liquidity', internalType: 'uint128', type: 'uint128' },
+        ],
+        indexed: false,
+      },
+    ],
+    name: 'Seeded',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'ventureAmount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'moneyAmount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'WithdrawnAll',
+  },
+  { type: 'error', inputs: [], name: 'AlreadySeeded' },
+  { type: 'error', inputs: [], name: 'BasketUnprofitable' },
+  { type: 'error', inputs: [], name: 'CallerCannotPause' },
+  { type: 'error', inputs: [], name: 'CallerNotBootstrapper' },
+  { type: 'error', inputs: [], name: 'CallerNotKeeper' },
+  { type: 'error', inputs: [], name: 'CallerNotPoolManager' },
+  { type: 'error', inputs: [], name: 'CallerNotVenture' },
+  { type: 'error', inputs: [], name: 'ForeignMarket' },
+  { type: 'error', inputs: [], name: 'InsufficientIdle' },
+  { type: 'error', inputs: [], name: 'InsufficientOracleHistory' },
+  { type: 'error', inputs: [], name: 'InvalidAddress' },
+  { type: 'error', inputs: [], name: 'InvalidConstraints' },
+  {
+    type: 'error',
+    inputs: [{ name: 'index', internalType: 'uint256', type: 'uint256' }],
+    name: 'InvalidPosition',
+  },
+  { type: 'error', inputs: [], name: 'Paused' },
+  {
+    type: 'error',
+    inputs: [{ name: 'availableAt', internalType: 'uint256', type: 'uint256' }],
+    name: 'RebalanceTooSoon',
+  },
+  { type: 'error', inputs: [], name: 'ReentrancyGuardReentrantCall' },
+  {
+    type: 'error',
+    inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
+    name: 'SafeERC20FailedOperation',
+  },
+  { type: 'error', inputs: [], name: 'SpotPriceDeviationTooHigh' },
+  { type: 'error', inputs: [], name: 'TooManyPositions' },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // AuctionStateLens
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -230,8 +856,22 @@ export const conditionalMarketOracleAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'DOUBLING_TICKS',
+    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'HUB',
     outputs: [{ name: '', internalType: 'contract IUmiaHub', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'MIN_TICK_SLEW_PER_SECOND',
+    outputs: [{ name: '', internalType: 'uint24', type: 'uint24' }],
     stateMutability: 'view',
   },
   {
@@ -243,6 +883,17 @@ export const conditionalMarketOracleAbi = [
     ],
     name: 'calculateTWAP',
     outputs: [{ name: 'twapX112', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'proposalId', internalType: 'uint256', type: 'uint256' },
+      { name: 'reserve0', internalType: 'uint256', type: 'uint256' },
+      { name: 'reserve1', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'calculateTWAPTick',
+    outputs: [{ name: 'meanTick', internalType: 'int24', type: 'int24' }],
     stateMutability: 'view',
   },
   {
@@ -264,18 +915,23 @@ export const conditionalMarketOracleAbi = [
     inputs: [{ name: 'proposalId', internalType: 'uint256', type: 'uint256' }],
     name: 'oracleStates',
     outputs: [
-      {
-        name: 'price0CumulativeLast',
-        internalType: 'uint256',
-        type: 'uint256',
-      },
-      { name: 'lastPrice0X112', internalType: 'uint256', type: 'uint256' },
+      { name: 'tickCumulative', internalType: 'int64', type: 'int64' },
+      { name: 'lastTick', internalType: 'int24', type: 'int24' },
+      { name: 'tickAreaRemainder', internalType: 'uint16', type: 'uint16' },
       { name: 'tradingStart', internalType: 'uint32', type: 'uint32' },
       { name: 'tradingEnd', internalType: 'uint32', type: 'uint32' },
       { name: 'lastTimestamp', internalType: 'uint32', type: 'uint32' },
+      { name: 'slewPerSecond', internalType: 'uint24', type: 'uint24' },
       { name: 'initialized', internalType: 'bool', type: 'bool' },
     ],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'duration', internalType: 'uint32', type: 'uint32' }],
+    name: 'slewFor',
+    outputs: [{ name: '', internalType: 'uint24', type: 'uint24' }],
+    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -2216,6 +2872,673 @@ export const spotLiquidityVaultAbi = [
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// SpotLiquidityVaultV2
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const spotLiquidityVaultV2Abi = [
+  {
+    type: 'constructor',
+    inputs: [
+      { name: '_hub', internalType: 'address', type: 'address' },
+      { name: '_venture', internalType: 'address', type: 'address' },
+      { name: '_poolManager', internalType: 'address', type: 'address' },
+      { name: '_hook', internalType: 'address', type: 'address' },
+      { name: '_fee', internalType: 'uint24', type: 'uint24' },
+      { name: '_tickSpacing', internalType: 'int24', type: 'int24' },
+      { name: '_bootstrapper', internalType: 'address', type: 'address' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'HUB',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'activeManager',
+    outputs: [
+      { name: 'activeOperator', internalType: 'address', type: 'address' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'ventureAmount', internalType: 'uint256', type: 'uint256' },
+      { name: 'moneyAmount', internalType: 'uint256', type: 'uint256' },
+      { name: 'sharesReceiver', internalType: 'address', type: 'address' },
+    ],
+    name: 'bootstrapFromLBP',
+    outputs: [
+      { name: 'sharesMinted', internalType: 'uint256', type: 'uint256' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'bootstrapper',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'currentLiquidity',
+    outputs: [{ name: 'liquidity', internalType: 'uint128', type: 'uint128' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    name: 'deployedMoney',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    name: 'deployedVenture',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'ventureAmount', internalType: 'uint256', type: 'uint256' },
+      { name: 'moneyAmount', internalType: 'uint256', type: 'uint256' },
+      { name: 'minSharesOut', internalType: 'uint256', type: 'uint256' },
+      { name: 'receiver', internalType: 'address', type: 'address' },
+    ],
+    name: 'deposit',
+    outputs: [
+      { name: 'shares', internalType: 'uint256', type: 'uint256' },
+      { name: 'ventureUsed', internalType: 'uint256', type: 'uint256' },
+      { name: 'moneyUsed', internalType: 'uint256', type: 'uint256' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getPoolKey',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'hook',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'isPoolInitialized',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'moneyToken',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'poolManager',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'marketId', internalType: 'uint256', type: 'uint256' },
+      { name: 'pullBps', internalType: 'uint16', type: 'uint16' },
+    ],
+    name: 'pullForDecisionMarket',
+    outputs: [
+      { name: 'venturePulled', internalType: 'uint256', type: 'uint256' },
+      { name: 'moneyPulled', internalType: 'uint256', type: 'uint256' },
+      { name: 'liquidityPulled', internalType: 'uint128', type: 'uint128' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'marketId', internalType: 'uint256', type: 'uint256' },
+      { name: 'ventureAmount', internalType: 'uint256', type: 'uint256' },
+      { name: 'moneyAmount', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'returnFromDecisionMarket',
+    outputs: [
+      { name: 'liquidityAdded', internalType: 'uint128', type: 'uint128' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'address', type: 'address' }],
+    name: 'shareBalance',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'tickLower',
+    outputs: [{ name: '', internalType: 'int24', type: 'int24' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'tickUpper',
+    outputs: [{ name: '', internalType: 'int24', type: 'int24' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'totalAssets',
+    outputs: [
+      { name: 'ventureAssets', internalType: 'uint256', type: 'uint256' },
+      { name: 'moneyAssets', internalType: 'uint256', type: 'uint256' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'totalDeployedMoney',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'totalDeployedVenture',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'totalShares',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'data', internalType: 'bytes', type: 'bytes' }],
+    name: 'unlockCallback',
+    outputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'venture',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'ventureIsToken0',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'ventureToken',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'sharesIn', internalType: 'uint256', type: 'uint256' },
+      { name: 'minVentureOut', internalType: 'uint256', type: 'uint256' },
+      { name: 'minMoneyOut', internalType: 'uint256', type: 'uint256' },
+      { name: 'receiver', internalType: 'address', type: 'address' },
+    ],
+    name: 'withdraw',
+    outputs: [
+      { name: 'ventureOut', internalType: 'uint256', type: 'uint256' },
+      { name: 'moneyOut', internalType: 'uint256', type: 'uint256' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'venture',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'ventureAmount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'moneyAmount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'BootstrapSurplusForwarded',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'receiver',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'ventureUsed',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'moneyUsed',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'sharesMinted',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'Deposit',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'marketId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'venturePulled',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'moneyPulled',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'liquidityPulled',
+        internalType: 'uint128',
+        type: 'uint128',
+        indexed: false,
+      },
+    ],
+    name: 'LiquidityPulledForMarket',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'marketId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'ventureReturned',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'moneyReturned',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'liquidityAdded',
+        internalType: 'uint128',
+        type: 'uint128',
+        indexed: false,
+      },
+    ],
+    name: 'LiquidityReturnedFromMarket',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'recipient',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'ventureAmount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'moneyAmount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'ProtocolFeeTaken',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'sender',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'receiver',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'sharesBurned',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'ventureOut',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'moneyOut',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'Withdraw',
+  },
+  { type: 'error', inputs: [], name: 'CallerNotBootstrapper' },
+  { type: 'error', inputs: [], name: 'CallerNotLBP' },
+  { type: 'error', inputs: [], name: 'CallerNotMarketCore' },
+  { type: 'error', inputs: [], name: 'CallerNotPoolManager' },
+  { type: 'error', inputs: [], name: 'InsufficientLiquidityPulled' },
+  { type: 'error', inputs: [], name: 'InsufficientOracleHistory' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'minted', internalType: 'uint256', type: 'uint256' },
+      { name: 'minimum', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'InsufficientSharesMinted',
+  },
+  { type: 'error', inputs: [], name: 'InsufficientWithdrawAmount' },
+  { type: 'error', inputs: [], name: 'InvalidAddress' },
+  { type: 'error', inputs: [], name: 'InvalidAmount' },
+  { type: 'error', inputs: [], name: 'InvalidPullBps' },
+  { type: 'error', inputs: [], name: 'InvalidRecipient' },
+  { type: 'error', inputs: [], name: 'MarketAlreadyDeployed' },
+  { type: 'error', inputs: [], name: 'MarketNotDeployed' },
+  { type: 'error', inputs: [], name: 'PoolAlreadyInitialized' },
+  { type: 'error', inputs: [], name: 'PoolNotInitialized' },
+  { type: 'error', inputs: [], name: 'ReentrancyGuardReentrantCall' },
+  {
+    type: 'error',
+    inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
+    name: 'SafeERC20FailedOperation',
+  },
+  { type: 'error', inputs: [], name: 'SpotPriceDeviationTooHigh' },
+  { type: 'error', inputs: [], name: 'VaultImbalanced' },
+  { type: 'error', inputs: [], name: 'VentureNotFound' },
+  { type: 'error', inputs: [], name: 'WithdrawalsBlockedDuringActiveMarket' },
+  { type: 'error', inputs: [], name: 'ZeroLiquidity' },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// SpotMigrator
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const spotMigratorAbi = [
+  {
+    type: 'constructor',
+    inputs: [
+      { name: '_hub', internalType: 'address', type: 'address' },
+      {
+        name: '_poolManager',
+        internalType: 'contract IPoolManager',
+        type: 'address',
+      },
+      { name: '_hookV2', internalType: 'address', type: 'address' },
+      { name: '_sourceHook', internalType: 'address', type: 'address' },
+      {
+        name: '_code',
+        internalType: 'contract SpotLiquidityV2Code',
+        type: 'address',
+      },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'HUB',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'MIN_ANCHOR_BPS',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'hookV2',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'p',
+        internalType: 'struct SpotMigrator.MigrateParams',
+        type: 'tuple',
+        components: [
+          { name: 'anchorBps', internalType: 'uint16', type: 'uint16' },
+          {
+            name: 'activeSlices',
+            internalType: 'struct ActiveSlices.Slice[]',
+            type: 'tuple[]',
+            components: [
+              { name: 'tickLowerOffset', internalType: 'int24', type: 'int24' },
+              { name: 'tickUpperOffset', internalType: 'int24', type: 'int24' },
+              { name: 'bps', internalType: 'uint16', type: 'uint16' },
+            ],
+          },
+        ],
+      },
+    ],
+    name: 'migrate',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'poolManager',
+    outputs: [
+      { name: '', internalType: 'contract IPoolManager', type: 'address' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'venture', internalType: 'address', type: 'address' }],
+    name: 'prepare',
+    outputs: [
+      { name: 'vault', internalType: 'address', type: 'address' },
+      { name: 'alm', internalType: 'address', type: 'address' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'venture', internalType: 'address', type: 'address' }],
+    name: 'prepared',
+    outputs: [
+      { name: 'vault', internalType: 'address', type: 'address' },
+      { name: 'alm', internalType: 'address', type: 'address' },
+      { name: 'migrated', internalType: 'bool', type: 'bool' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'venture', internalType: 'address', type: 'address' }],
+    name: 'seamBlocked',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'sourceHook',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'venture',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'oldVault',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newVault',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      { name: 'alm', internalType: 'address', type: 'address', indexed: false },
+      {
+        name: 'poolId',
+        internalType: 'PoolId',
+        type: 'bytes32',
+        indexed: false,
+      },
+    ],
+    name: 'VentureMigrated',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'venture',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'vault',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      { name: 'alm', internalType: 'address', type: 'address', indexed: false },
+    ],
+    name: 'VenturePrepared',
+  },
+  { type: 'error', inputs: [], name: 'AlreadyMigrated' },
+  { type: 'error', inputs: [], name: 'AlreadyPrepared' },
+  { type: 'error', inputs: [], name: 'DeploymentFailed' },
+  { type: 'error', inputs: [], name: 'InvalidParams' },
+  { type: 'error', inputs: [], name: 'InvalidSlice' },
+  { type: 'error', inputs: [], name: 'NoSpotVault' },
+  { type: 'error', inputs: [], name: 'NotPrepared' },
+  { type: 'error', inputs: [], name: 'NothingToMigrate' },
+  {
+    type: 'error',
+    inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
+    name: 'SafeERC20FailedOperation',
+  },
+  { type: 'error', inputs: [], name: 'SeamPriceDeviationTooHigh' },
+  { type: 'error', inputs: [], name: 'UnknownSourcePool' },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // UmiaHook
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -2927,6 +4250,829 @@ export const umiaHookAbi = [
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// UmiaHookV2
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const umiaHookV2Abi = [
+  {
+    type: 'constructor',
+    inputs: [
+      { name: '_initialOwner', internalType: 'address', type: 'address' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'BACKFILL_RESERVE',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'BACKFILL_SPACING',
+    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'BACKFILL_STEPS',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'COARSE_INTERVAL',
+    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'INITIAL_OWNER',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      {
+        name: '',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      {
+        name: '',
+        internalType: 'struct ModifyLiquidityParams',
+        type: 'tuple',
+        components: [
+          { name: 'tickLower', internalType: 'int24', type: 'int24' },
+          { name: 'tickUpper', internalType: 'int24', type: 'int24' },
+          { name: 'liquidityDelta', internalType: 'int256', type: 'int256' },
+          { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+        ],
+      },
+      { name: '', internalType: 'BalanceDelta', type: 'int256' },
+      { name: '', internalType: 'BalanceDelta', type: 'int256' },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'afterAddLiquidity',
+    outputs: [
+      { name: '', internalType: 'bytes4', type: 'bytes4' },
+      { name: '', internalType: 'BalanceDelta', type: 'int256' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      {
+        name: '',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'afterDonate',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      {
+        name: 'key',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      { name: '', internalType: 'uint160', type: 'uint160' },
+      { name: 'tick', internalType: 'int24', type: 'int24' },
+    ],
+    name: 'afterInitialize',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      {
+        name: '',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      {
+        name: '',
+        internalType: 'struct ModifyLiquidityParams',
+        type: 'tuple',
+        components: [
+          { name: 'tickLower', internalType: 'int24', type: 'int24' },
+          { name: 'tickUpper', internalType: 'int24', type: 'int24' },
+          { name: 'liquidityDelta', internalType: 'int256', type: 'int256' },
+          { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+        ],
+      },
+      { name: '', internalType: 'BalanceDelta', type: 'int256' },
+      { name: '', internalType: 'BalanceDelta', type: 'int256' },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'afterRemoveLiquidity',
+    outputs: [
+      { name: '', internalType: 'bytes4', type: 'bytes4' },
+      { name: '', internalType: 'BalanceDelta', type: 'int256' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      {
+        name: '',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      {
+        name: '',
+        internalType: 'struct SwapParams',
+        type: 'tuple',
+        components: [
+          { name: 'zeroForOne', internalType: 'bool', type: 'bool' },
+          { name: 'amountSpecified', internalType: 'int256', type: 'int256' },
+          {
+            name: 'sqrtPriceLimitX96',
+            internalType: 'uint160',
+            type: 'uint160',
+          },
+        ],
+      },
+      { name: '', internalType: 'BalanceDelta', type: 'int256' },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'afterSwap',
+    outputs: [
+      { name: '', internalType: 'bytes4', type: 'bytes4' },
+      { name: '', internalType: 'int128', type: 'int128' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'sender', internalType: 'address', type: 'address' },
+      {
+        name: 'key',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      {
+        name: 'params',
+        internalType: 'struct ModifyLiquidityParams',
+        type: 'tuple',
+        components: [
+          { name: 'tickLower', internalType: 'int24', type: 'int24' },
+          { name: 'tickUpper', internalType: 'int24', type: 'int24' },
+          { name: 'liquidityDelta', internalType: 'int256', type: 'int256' },
+          { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+        ],
+      },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'beforeAddLiquidity',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      {
+        name: '',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'beforeDonate',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'sender', internalType: 'address', type: 'address' },
+      {
+        name: 'key',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      { name: '', internalType: 'uint160', type: 'uint160' },
+    ],
+    name: 'beforeInitialize',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      {
+        name: 'key',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      {
+        name: '',
+        internalType: 'struct ModifyLiquidityParams',
+        type: 'tuple',
+        components: [
+          { name: 'tickLower', internalType: 'int24', type: 'int24' },
+          { name: 'tickUpper', internalType: 'int24', type: 'int24' },
+          { name: 'liquidityDelta', internalType: 'int256', type: 'int256' },
+          { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+        ],
+      },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'beforeRemoveLiquidity',
+    outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      {
+        name: 'key',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      {
+        name: '',
+        internalType: 'struct SwapParams',
+        type: 'tuple',
+        components: [
+          { name: 'zeroForOne', internalType: 'bool', type: 'bool' },
+          { name: 'amountSpecified', internalType: 'int256', type: 'int256' },
+          {
+            name: 'sqrtPriceLimitX96',
+            internalType: 'uint160',
+            type: 'uint160',
+          },
+        ],
+      },
+      { name: '', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'beforeSwap',
+    outputs: [
+      { name: '', internalType: 'bytes4', type: 'bytes4' },
+      { name: '', internalType: 'BeforeSwapDelta', type: 'int256' },
+      { name: '', internalType: 'uint24', type: 'uint24' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'PoolId', type: 'bytes32' }],
+    name: 'coarseOracleStates',
+    outputs: [
+      { name: 'index', internalType: 'uint16', type: 'uint16' },
+      { name: 'cardinality', internalType: 'uint16', type: 'uint16' },
+      { name: 'cardinalityNext', internalType: 'uint16', type: 'uint16' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'factory',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'id', internalType: 'PoolId', type: 'bytes32' },
+      { name: 'index', internalType: 'uint16', type: 'uint16' },
+    ],
+    name: 'getCoarseObservation',
+    outputs: [
+      { name: 'blockTimestamp', internalType: 'uint32', type: 'uint32' },
+      { name: 'tickCumulative', internalType: 'int48', type: 'int48' },
+      {
+        name: 'secondsPerLiquidityCumulativeX128',
+        internalType: 'uint144',
+        type: 'uint144',
+      },
+      { name: 'initialized', internalType: 'bool', type: 'bool' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getHookPermissions',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct Hooks.Permissions',
+        type: 'tuple',
+        components: [
+          { name: 'beforeInitialize', internalType: 'bool', type: 'bool' },
+          { name: 'afterInitialize', internalType: 'bool', type: 'bool' },
+          { name: 'beforeAddLiquidity', internalType: 'bool', type: 'bool' },
+          { name: 'afterAddLiquidity', internalType: 'bool', type: 'bool' },
+          { name: 'beforeRemoveLiquidity', internalType: 'bool', type: 'bool' },
+          { name: 'afterRemoveLiquidity', internalType: 'bool', type: 'bool' },
+          { name: 'beforeSwap', internalType: 'bool', type: 'bool' },
+          { name: 'afterSwap', internalType: 'bool', type: 'bool' },
+          { name: 'beforeDonate', internalType: 'bool', type: 'bool' },
+          { name: 'afterDonate', internalType: 'bool', type: 'bool' },
+          { name: 'beforeSwapReturnDelta', internalType: 'bool', type: 'bool' },
+          { name: 'afterSwapReturnDelta', internalType: 'bool', type: 'bool' },
+          {
+            name: 'afterAddLiquidityReturnDelta',
+            internalType: 'bool',
+            type: 'bool',
+          },
+          {
+            name: 'afterRemoveLiquidityReturnDelta',
+            internalType: 'bool',
+            type: 'bool',
+          },
+        ],
+      },
+    ],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'id', internalType: 'PoolId', type: 'bytes32' },
+      { name: 'index', internalType: 'uint16', type: 'uint16' },
+    ],
+    name: 'getObservation',
+    outputs: [
+      { name: 'blockTimestamp', internalType: 'uint32', type: 'uint32' },
+      { name: 'tickCumulative', internalType: 'int48', type: 'int48' },
+      {
+        name: 'secondsPerLiquidityCumulativeX128',
+        internalType: 'uint144',
+        type: 'uint144',
+      },
+      { name: 'initialized', internalType: 'bool', type: 'bool' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'hub',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'key',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      { name: 'cardinalityNext', internalType: 'uint16', type: 'uint16' },
+    ],
+    name: 'increaseCardinalityNext',
+    outputs: [
+      { name: 'cardinalityNextOld', internalType: 'uint16', type: 'uint16' },
+      { name: 'cardinalityNextNew', internalType: 'uint16', type: 'uint16' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'key',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      { name: 'cardinalityNext', internalType: 'uint16', type: 'uint16' },
+    ],
+    name: 'increaseCoarseCardinalityNext',
+    outputs: [
+      { name: 'cardinalityNextOld', internalType: 'uint16', type: 'uint16' },
+      { name: 'cardinalityNextNew', internalType: 'uint16', type: 'uint16' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: '_factory', internalType: 'address', type: 'address' },
+      {
+        name: '_poolManager',
+        internalType: 'contract IPoolManager',
+        type: 'address',
+      },
+      { name: '_hub', internalType: 'address', type: 'address' },
+    ],
+    name: 'initialize',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'key',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      { name: 'secondsAgos', internalType: 'uint32[]', type: 'uint32[]' },
+    ],
+    name: 'observe',
+    outputs: [
+      { name: 'tickCumulatives', internalType: 'int48[]', type: 'int48[]' },
+      {
+        name: 'secondsPerLiquidityCumulativeX128s',
+        internalType: 'uint144[]',
+        type: 'uint144[]',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'key',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      { name: 'secondsAgos', internalType: 'uint32[]', type: 'uint32[]' },
+    ],
+    name: 'observeLong',
+    outputs: [
+      { name: 'tickCumulatives', internalType: 'int48[]', type: 'int48[]' },
+      {
+        name: 'secondsPerLiquidityCumulativeX128s',
+        internalType: 'uint144[]',
+        type: 'uint144[]',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'PoolId', type: 'bytes32' }],
+    name: 'oracleStates',
+    outputs: [
+      { name: 'index', internalType: 'uint16', type: 'uint16' },
+      { name: 'cardinality', internalType: 'uint16', type: 'uint16' },
+      { name: 'cardinalityNext', internalType: 'uint16', type: 'uint16' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'poolManager',
+    outputs: [
+      { name: '', internalType: 'contract IPoolManager', type: 'address' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'PoolId', type: 'bytes32' }],
+    name: 'pools',
+    outputs: [
+      { name: 'launcher', internalType: 'address', type: 'address' },
+      { name: 'venture', internalType: 'address', type: 'address' },
+      { name: 'anchorOperator', internalType: 'address', type: 'address' },
+      { name: 'activeOperator', internalType: 'address', type: 'address' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'key',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      {
+        name: 'cfg',
+        internalType: 'struct IUmiaHookV2.PoolConfig',
+        type: 'tuple',
+        components: [
+          { name: 'launcher', internalType: 'address', type: 'address' },
+          { name: 'venture', internalType: 'address', type: 'address' },
+          { name: 'anchorOperator', internalType: 'address', type: 'address' },
+          { name: 'activeOperator', internalType: 'address', type: 'address' },
+        ],
+      },
+      {
+        name: 'predecessorKey',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+    ],
+    name: 'registerMigratedPool',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'key',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      {
+        name: 'cfg',
+        internalType: 'struct IUmiaHookV2.PoolConfig',
+        type: 'tuple',
+        components: [
+          { name: 'launcher', internalType: 'address', type: 'address' },
+          { name: 'venture', internalType: 'address', type: 'address' },
+          { name: 'anchorOperator', internalType: 'address', type: 'address' },
+          { name: 'activeOperator', internalType: 'address', type: 'address' },
+        ],
+      },
+    ],
+    name: 'registerPool',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'factory',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      {
+        name: 'poolManager',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      { name: 'hub', internalType: 'address', type: 'address', indexed: false },
+    ],
+    name: 'Initialized',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'id', internalType: 'PoolId', type: 'bytes32', indexed: true },
+      {
+        name: 'predecessorHook',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'predecessorId',
+        internalType: 'PoolId',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'backfillStart',
+        internalType: 'uint32',
+        type: 'uint32',
+        indexed: false,
+      },
+      {
+        name: 'observations',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+    ],
+    name: 'PoolPredecessorSet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'id', internalType: 'PoolId', type: 'bytes32', indexed: true },
+      {
+        name: 'anchorOperator',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'config',
+        internalType: 'struct IUmiaHookV2.PoolConfig',
+        type: 'tuple',
+        components: [
+          { name: 'launcher', internalType: 'address', type: 'address' },
+          { name: 'venture', internalType: 'address', type: 'address' },
+          { name: 'anchorOperator', internalType: 'address', type: 'address' },
+          { name: 'activeOperator', internalType: 'address', type: 'address' },
+        ],
+        indexed: false,
+      },
+    ],
+    name: 'PoolRegistered',
+  },
+  { type: 'error', inputs: [], name: 'FactoryAlreadySet' },
+  { type: 'error', inputs: [], name: 'InvalidFactory' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'provided', internalType: 'address', type: 'address' },
+      { name: 'expected', internalType: 'address', type: 'address' },
+    ],
+    name: 'InvalidHooksAddress',
+  },
+  { type: 'error', inputs: [], name: 'InvalidHub' },
+  { type: 'error', inputs: [], name: 'InvalidInitialOwner' },
+  { type: 'error', inputs: [], name: 'InvalidOperator' },
+  { type: 'error', inputs: [], name: 'InvalidPoolManager' },
+  { type: 'error', inputs: [], name: 'InvalidPredecessor' },
+  { type: 'error', inputs: [], name: 'InvalidVentureAddress' },
+  {
+    type: 'error',
+    inputs: [{ name: 'caller', internalType: 'address', type: 'address' }],
+    name: 'NotFactoryDeployedLBP',
+  },
+  { type: 'error', inputs: [], name: 'NotInitialOwner' },
+  {
+    type: 'error',
+    inputs: [{ name: 'caller', internalType: 'address', type: 'address' }],
+    name: 'NotSpotMigrator',
+  },
+  { type: 'error', inputs: [], name: 'OnlyFullRangePositions' },
+  { type: 'error', inputs: [], name: 'OnlyPoolManager' },
+  { type: 'error', inputs: [], name: 'OracleCardinalityCannotBeZero' },
+  {
+    type: 'error',
+    inputs: [{ name: 'id', internalType: 'PoolId', type: 'bytes32' }],
+    name: 'PoolAlreadyRegistered',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'oldestTimestamp', internalType: 'uint32', type: 'uint32' },
+      { name: 'targetTimestamp', internalType: 'uint32', type: 'uint32' },
+    ],
+    name: 'TargetPredatesOldestObservation',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'caller', internalType: 'address', type: 'address' },
+      { name: 'expected', internalType: 'address', type: 'address' },
+    ],
+    name: 'UnauthorizedLauncher',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'caller', internalType: 'address', type: 'address' }],
+    name: 'UnauthorizedLiquidityOperator',
+  },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // UmiaHub
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -2963,6 +5109,13 @@ export const umiaHubAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'MIN_EXECUTION_DELAY',
+    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'MIN_INITIAL_SUPPLY',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
@@ -2972,6 +5125,13 @@ export const umiaHubAbi = [
     inputs: [],
     name: 'UPGRADE_INTERFACE_VERSION',
     outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'activeLiquidityKeeper',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
   },
   {
@@ -3141,6 +5301,20 @@ export const umiaHubAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'launchActiveHalfWidthTicks',
+    outputs: [{ name: '', internalType: 'int24', type: 'int24' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'launchAnchorBps',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'lbpStrategyFactory',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
@@ -3151,6 +5325,16 @@ export const umiaHubAbi = [
     name: 'marketCreationSigner',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'venture', internalType: 'address', type: 'address' },
+      { name: 'newVault', internalType: 'address', type: 'address' },
+    ],
+    name: 'migrateSpotLiquidityVault',
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -3201,6 +5385,13 @@ export const umiaHubAbi = [
     type: 'function',
     inputs: [{ name: '_marketId', internalType: 'uint256', type: 'uint256' }],
     name: 'resetDecisionMarketCircuitBreaker',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '_keeper', internalType: 'address', type: 'address' }],
+    name: 'setActiveLiquidityKeeper',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -3265,6 +5456,20 @@ export const umiaHubAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: 'halfWidth', internalType: 'int24', type: 'int24' }],
+    name: 'setLaunchActiveHalfWidthTicks',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'bps', internalType: 'uint16', type: 'uint16' }],
+    name: 'setLaunchAnchorBps',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [{ name: '_factory', internalType: 'address', type: 'address' }],
     name: 'setLbpStrategyFactory',
     outputs: [],
@@ -3288,6 +5493,13 @@ export const umiaHubAbi = [
     type: 'function',
     inputs: [{ name: 'recipient', internalType: 'address', type: 'address' }],
     name: 'setProtocolFeeRecipient',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '_migrator', internalType: 'address', type: 'address' }],
+    name: 'setSpotMigrator',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -3359,6 +5571,16 @@ export const umiaHubAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      { name: 'ventureId', internalType: 'uint256', type: 'uint256' },
+      { name: 'authority', internalType: 'address', type: 'address' },
+    ],
+    name: 'setVentureVestingAuthority',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [{ name: '_admin', internalType: 'address', type: 'address' }],
     name: 'setVestingAdmin',
     outputs: [],
@@ -3377,6 +5599,13 @@ export const umiaHubAbi = [
     name: 'setWinningMarketThresholdBps',
     outputs: [],
     stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'spotMigrator',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -3493,6 +5722,13 @@ export const umiaHubAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: 'ventureId', internalType: 'uint256', type: 'uint256' }],
+    name: 'ventureVestingAuthority',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [],
     name: 'vestingAdmin',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
@@ -3511,6 +5747,25 @@ export const umiaHubAbi = [
     name: 'winningMarketThresholdBps',
     outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
     stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'oldKeeper',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newKeeper',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'ActiveLiquidityKeeperUpdated',
   },
   {
     type: 'event',
@@ -3708,6 +5963,44 @@ export const umiaHubAbi = [
     anonymous: false,
     inputs: [
       {
+        name: 'oldHalfWidth',
+        internalType: 'int24',
+        type: 'int24',
+        indexed: false,
+      },
+      {
+        name: 'newHalfWidth',
+        internalType: 'int24',
+        type: 'int24',
+        indexed: false,
+      },
+    ],
+    name: 'LaunchActiveHalfWidthTicksUpdated',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'oldBps',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+      {
+        name: 'newBps',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+    ],
+    name: 'LaunchAnchorBpsUpdated',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
         name: 'oldFactory',
         internalType: 'address',
         type: 'address',
@@ -3817,6 +6110,31 @@ export const umiaHubAbi = [
         indexed: true,
       },
       {
+        name: 'oldVault',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newVault',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'SpotLiquidityVaultMigrated',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'venture',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
         name: 'vault',
         internalType: 'address',
         type: 'address',
@@ -3824,6 +6142,25 @@ export const umiaHubAbi = [
       },
     ],
     name: 'SpotLiquidityVaultRegistered',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'oldMigrator',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newMigrator',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'SpotMigratorUpdated',
   },
   {
     type: 'event',
@@ -3985,6 +6322,25 @@ export const umiaHubAbi = [
     anonymous: false,
     inputs: [
       {
+        name: 'ventureId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'authority',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'VentureVestingAuthoritySet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
         name: 'oldAdmin',
         internalType: 'address',
         type: 'address',
@@ -4063,12 +6419,16 @@ export const umiaHubAbi = [
   { type: 'error', inputs: [], name: 'InvalidExecutionDelay' },
   { type: 'error', inputs: [], name: 'InvalidInitialSupply' },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
+  { type: 'error', inputs: [], name: 'InvalidLaunchActiveHalfWidth' },
   { type: 'error', inputs: [], name: 'InvalidPoolTickSpacing' },
+  { type: 'error', inputs: [], name: 'InvalidSpotLiquidityVault' },
   { type: 'error', inputs: [], name: 'InvalidToken' },
+  { type: 'error', inputs: [], name: 'InvalidVestingAuthority' },
   { type: 'error', inputs: [], name: 'LbpStrategyFactoryNotSet' },
   { type: 'error', inputs: [], name: 'MarketCoreNotSet' },
   { type: 'error', inputs: [], name: 'MoneyTokenNotApproved' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
+  { type: 'error', inputs: [], name: 'NotSpotMigrator' },
   { type: 'error', inputs: [], name: 'NotVentureLBP' },
   { type: 'error', inputs: [], name: 'NotVentureToken' },
   {
@@ -4087,6 +6447,8 @@ export const umiaHubAbi = [
     name: 'SafeERC20FailedOperation',
   },
   { type: 'error', inputs: [], name: 'SpotLiquidityVaultAlreadyRegistered' },
+  { type: 'error', inputs: [], name: 'SpotLiquidityVaultNotRegistered' },
+  { type: 'error', inputs: [], name: 'SpotLiquidityVaultStillFunded' },
   { type: 'error', inputs: [], name: 'TokenBalanceZero' },
   { type: 'error', inputs: [], name: 'TokenOwnerNotHub' },
   { type: 'error', inputs: [], name: 'TransferFailed' },
@@ -4412,6 +6774,7 @@ export const umiaLbpAbi = [
   { type: 'error', inputs: [], name: 'InvalidTokensRecipient' },
   { type: 'error', inputs: [], name: 'InvalidVentureAddress' },
   { type: 'error', inputs: [], name: 'InvalidVentureBps' },
+  { type: 'error', inputs: [], name: 'LaunchSplitUnset' },
   { type: 'error', inputs: [], name: 'MigrationNotAllowed' },
   { type: 'error', inputs: [], name: 'NoCurrencyRaised' },
   {
@@ -4428,6 +6791,668 @@ export const umiaLbpAbi = [
     name: 'PriceTooHigh',
   },
   { type: 'error', inputs: [], name: 'ReentrancyGuardReentrantCall' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'sqrtPriceX96', internalType: 'uint160', type: 'uint160' },
+      { name: 'minSqrtPriceX96', internalType: 'uint160', type: 'uint160' },
+      { name: 'maxSqrtPriceX96', internalType: 'uint160', type: 'uint160' },
+    ],
+    name: 'SqrtPriceX96OutOfBounds',
+  },
+  { type: 'error', inputs: [], name: 'SweepNotAllowed' },
+  { type: 'error', inputs: [], name: 'TokenSplitTooHigh' },
+  { type: 'error', inputs: [], name: 'VaultDeploymentFailed' },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// UmiaLBPFactory
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const umiaLbpFactoryAbi = [
+  {
+    type: 'constructor',
+    inputs: [
+      {
+        name: '_poolManager',
+        internalType: 'contract IPoolManager',
+        type: 'address',
+      },
+      { name: '_umiaHook', internalType: 'address', type: 'address' },
+      { name: '_hub', internalType: 'address', type: 'address' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'token', internalType: 'address', type: 'address' },
+      { name: 'totalSupply', internalType: 'uint256', type: 'uint256' },
+      { name: 'configData', internalType: 'bytes', type: 'bytes' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'create',
+    outputs: [
+      {
+        name: 'distributor',
+        internalType: 'contract IDistributor',
+        type: 'address',
+      },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'token', internalType: 'address', type: 'address' },
+      { name: 'totalSupply', internalType: 'uint256', type: 'uint256' },
+      { name: 'configData', internalType: 'bytes', type: 'bytes' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'sender', internalType: 'address', type: 'address' },
+    ],
+    name: 'getAddress',
+    outputs: [
+      {
+        name: 'distributor',
+        internalType: 'contract IDistributor',
+        type: 'address',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'hub',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'address', type: 'address' }],
+    name: 'isLBP',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'lbpCreationCodePointer',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'poolManager',
+    outputs: [
+      { name: '', internalType: 'contract IPoolManager', type: 'address' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'umiaHook',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'vaultCreationCodePointer',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'distributionContract',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'token',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'totalSupply',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'DistributionInitialized',
+  },
+  { type: 'error', inputs: [], name: 'Create2EmptyBytecode' },
+  { type: 'error', inputs: [], name: 'FailedDeployment' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'balance', internalType: 'uint256', type: 'uint256' },
+      { name: 'needed', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'InsufficientBalance',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'amount', internalType: 'uint256', type: 'uint256' },
+      { name: 'max', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'InvalidAmount',
+  },
+  { type: 'error', inputs: [], name: 'InvalidHub' },
+  { type: 'error', inputs: [], name: 'InvalidPoolManager' },
+  { type: 'error', inputs: [], name: 'InvalidUmiaHook' },
+  { type: 'error', inputs: [], name: 'Unauthorized' },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// UmiaLBPFactoryV2
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const umiaLbpFactoryV2Abi = [
+  {
+    type: 'constructor',
+    inputs: [
+      {
+        name: '_poolManager',
+        internalType: 'contract IPoolManager',
+        type: 'address',
+      },
+      { name: '_umiaHook', internalType: 'address', type: 'address' },
+      { name: '_hub', internalType: 'address', type: 'address' },
+      {
+        name: '_code',
+        internalType: 'contract SpotLiquidityV2Code',
+        type: 'address',
+      },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'token', internalType: 'address', type: 'address' },
+      { name: 'totalSupply', internalType: 'uint256', type: 'uint256' },
+      { name: 'configData', internalType: 'bytes', type: 'bytes' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'create',
+    outputs: [
+      {
+        name: 'distributor',
+        internalType: 'contract IDistributor',
+        type: 'address',
+      },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'token', internalType: 'address', type: 'address' },
+      { name: 'totalSupply', internalType: 'uint256', type: 'uint256' },
+      { name: 'configData', internalType: 'bytes', type: 'bytes' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'sender', internalType: 'address', type: 'address' },
+    ],
+    name: 'getAddress',
+    outputs: [
+      {
+        name: 'distributor',
+        internalType: 'contract IDistributor',
+        type: 'address',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'hub',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'address', type: 'address' }],
+    name: 'isLBP',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'lbpCreationCodePointer',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'poolManager',
+    outputs: [
+      { name: '', internalType: 'contract IPoolManager', type: 'address' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'spotLiquidityCode',
+    outputs: [
+      {
+        name: '',
+        internalType: 'contract SpotLiquidityV2Code',
+        type: 'address',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'umiaHook',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'distributionContract',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'token',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'totalSupply',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'DistributionInitialized',
+  },
+  { type: 'error', inputs: [], name: 'Create2EmptyBytecode' },
+  { type: 'error', inputs: [], name: 'FailedDeployment' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'balance', internalType: 'uint256', type: 'uint256' },
+      { name: 'needed', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'InsufficientBalance',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'amount', internalType: 'uint256', type: 'uint256' },
+      { name: 'max', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'InvalidAmount',
+  },
+  { type: 'error', inputs: [], name: 'InvalidHub' },
+  { type: 'error', inputs: [], name: 'InvalidPoolManager' },
+  { type: 'error', inputs: [], name: 'InvalidUmiaHook' },
+  { type: 'error', inputs: [], name: 'Unauthorized' },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// UmiaLBPV2
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const umiaLbpv2Abi = [
+  {
+    type: 'constructor',
+    inputs: [
+      { name: '_token', internalType: 'address', type: 'address' },
+      { name: '_totalSupply', internalType: 'uint128', type: 'uint128' },
+      {
+        name: '_tokenSplitToAuction',
+        internalType: 'uint256',
+        type: 'uint256',
+      },
+      { name: '_moneyToken', internalType: 'address', type: 'address' },
+      { name: '_auctionParams', internalType: 'bytes', type: 'bytes' },
+      {
+        name: '_poolManager',
+        internalType: 'contract IPoolManager',
+        type: 'address',
+      },
+      {
+        name: '_umiaHook',
+        internalType: 'contract IUmiaHook',
+        type: 'address',
+      },
+      { name: '_venture', internalType: 'address', type: 'address' },
+      { name: '_ventureBps', internalType: 'uint256', type: 'uint256' },
+      {
+        name: '_spotLiquidityCode',
+        internalType: 'contract SpotLiquidityV2Code',
+        type: 'address',
+      },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'MAX_BPS',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'TOKEN_SPLIT_DENOMINATOR',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'auctionParams',
+    outputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'currency',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'hub',
+    outputs: [{ name: '', internalType: 'contract IUmiaHub', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'initializer',
+    outputs: [
+      { name: '', internalType: 'contract ILBPInitializer', type: 'address' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'migrate',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'migrated',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'migratedAtBlock',
+    outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'onTokensReceived',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'poolManager',
+    outputs: [
+      { name: '', internalType: 'contract IPoolManager', type: 'address' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'reserveTokenAmount',
+    outputs: [{ name: '', internalType: 'uint128', type: 'uint128' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'spotLiquidityCode',
+    outputs: [
+      {
+        name: '',
+        internalType: 'contract SpotLiquidityV2Code',
+        type: 'address',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'sweepCurrency',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'sweepToken',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'token',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'tokenSplitToAuction',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'totalSupply',
+    outputs: [{ name: '', internalType: 'uint128', type: 'uint128' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'umiaHook',
+    outputs: [
+      { name: '', internalType: 'contract IUmiaHook', type: 'address' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'venture',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'ventureBps',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'recipient',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'CurrencySwept',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'initializer',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'InitializerCreated',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'key',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+        indexed: true,
+      },
+      {
+        name: 'sqrtPriceX96',
+        internalType: 'uint160',
+        type: 'uint160',
+        indexed: false,
+      },
+    ],
+    name: 'Migrated',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'recipient',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'TokensSwept',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'currencyAmount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'tokenAmount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'VentureFundsDistributed',
+  },
+  { type: 'error', inputs: [], name: 'AlreadyMigrated' },
+  { type: 'error', inputs: [], name: 'CurrencyAmountTooHigh' },
+  { type: 'error', inputs: [], name: 'DeploymentFailed' },
+  { type: 'error', inputs: [], name: 'InitializerAlreadyCreated' },
+  { type: 'error', inputs: [], name: 'InitializerMustImplementInterface' },
+  { type: 'error', inputs: [], name: 'InitializerTokenSplitIsZero' },
+  { type: 'error', inputs: [], name: 'InsufficientCurrency' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'expected', internalType: 'uint256', type: 'uint256' },
+      { name: 'received', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'InvalidAmountReceived',
+  },
+  { type: 'error', inputs: [], name: 'InvalidBips' },
+  { type: 'error', inputs: [], name: 'InvalidCurrency' },
+  { type: 'error', inputs: [], name: 'InvalidFundsRecipient' },
+  { type: 'error', inputs: [], name: 'InvalidSlice' },
+  {
+    type: 'error',
+    inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
+    name: 'InvalidToken',
+  },
+  { type: 'error', inputs: [], name: 'InvalidTokensRecipient' },
+  { type: 'error', inputs: [], name: 'InvalidVentureAddress' },
+  { type: 'error', inputs: [], name: 'InvalidVentureBps' },
+  { type: 'error', inputs: [], name: 'LaunchSplitUnset' },
+  { type: 'error', inputs: [], name: 'MigrationNotAllowed' },
+  { type: 'error', inputs: [], name: 'NoCurrencyRaised' },
+  {
+    type: 'error',
+    inputs: [{ name: 'price', internalType: 'uint256', type: 'uint256' }],
+    name: 'PriceIsZero',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'price', internalType: 'uint256', type: 'uint256' },
+      { name: 'maxPrice', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'PriceTooHigh',
+  },
+  { type: 'error', inputs: [], name: 'ReentrancyGuardReentrantCall' },
+  {
+    type: 'error',
+    inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
+    name: 'SafeERC20FailedOperation',
+  },
   {
     type: 'error',
     inputs: [
@@ -4485,6 +7510,13 @@ export const umiaMarketCoreAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: 'marketId', internalType: 'uint256', type: 'uint256' }],
+    name: 'activeManager',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'ventureId', internalType: 'uint256', type: 'uint256' }],
     name: 'activeMarketByVenture',
     outputs: [{ name: 'marketId', internalType: 'uint256', type: 'uint256' }],
@@ -4522,8 +7554,34 @@ export const umiaMarketCoreAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      { name: 'marketId', internalType: 'uint256', type: 'uint256' },
+      { name: 'zeroForOne', internalType: 'bool', type: 'bool' },
+      { name: 'outFractionWad', internalType: 'uint256', type: 'uint256' },
+      { name: 'amountInMaxPerLeg', internalType: 'uint256', type: 'uint256' },
+      { name: 'deadline', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'basketSwapExactOut',
+    outputs: [
+      { name: 'amountsIn', internalType: 'uint256[]', type: 'uint256[]' },
+      { name: 'amountsOut', internalType: 'uint256[]', type: 'uint256[]' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'marketId', internalType: 'uint256', type: 'uint256' }],
     name: 'claimSettlement',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'marketId', internalType: 'uint256', type: 'uint256' },
+      { name: 'users', internalType: 'address[]', type: 'address[]' },
+    ],
+    name: 'claimSettlementFor',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -4971,6 +8029,38 @@ export const umiaMarketCoreAbi = [
       },
     ],
     stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'marketId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'trader',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'zeroForOne',
+        internalType: 'bool',
+        type: 'bool',
+        indexed: false,
+      },
+      {
+        name: 'outFractionWad',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      { name: 'feeExempt', internalType: 'bool', type: 'bool', indexed: false },
+    ],
+    name: 'BasketSwap',
   },
   {
     type: 'event',
@@ -5613,6 +8703,13 @@ export const umiaValidationHookAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'BID_PROOF_MAX_AGE',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'DOMAIN_SEPARATOR',
     outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
     stateMutability: 'view',
@@ -5644,6 +8741,16 @@ export const umiaValidationHookAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      { name: 'stepIndex', internalType: 'uint256', type: 'uint256' },
+      { name: 'user', internalType: 'address', type: 'address' },
+    ],
+    name: 'authorizesWithoutCredential',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [],
     name: 'cancelOwnershipHandover',
     outputs: [],
@@ -5659,7 +8766,6 @@ export const umiaValidationHookAbi = [
   {
     type: 'function',
     inputs: [
-      { name: 'providerHash', internalType: 'bytes32', type: 'bytes32' },
       { name: 'identityHash', internalType: 'bytes32', type: 'bytes32' },
     ],
     name: 'clearIdentity',
@@ -5765,11 +8871,19 @@ export const umiaValidationHookAbi = [
   {
     type: 'function',
     inputs: [
-      { name: 'providerHash', internalType: 'bytes32', type: 'bytes32' },
       { name: 'identityHash', internalType: 'bytes32', type: 'bytes32' },
     ],
     name: 'identityOwner',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'providerHash', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'identityProvider',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
     stateMutability: 'view',
   },
   {
@@ -5809,6 +8923,13 @@ export const umiaValidationHookAbi = [
     name: 'maxBidPrice',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'data', internalType: 'bytes[]', type: 'bytes[]' }],
+    name: 'multicall',
+    outputs: [{ name: '', internalType: 'bytes[]', type: 'bytes[]' }],
+    stateMutability: 'payable',
   },
   {
     type: 'function',
@@ -5859,8 +8980,25 @@ export const umiaValidationHookAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: 'stepIndex', internalType: 'uint256', type: 'uint256' }],
+    name: 'requireStepNotStarted',
+    outputs: [],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [{ name: '_newCCA', internalType: 'address', type: 'address' }],
     name: 'setCCA',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'providerHash', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'identityProvider_', internalType: 'string', type: 'string' },
+    ],
+    name: 'setIdentityProvider',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -5918,6 +9056,16 @@ export const umiaValidationHookAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      { name: 'stepIndex', internalType: 'uint256', type: 'uint256' },
+      { name: 'required', internalType: 'bool', type: 'bool' },
+    ],
+    name: 'setVerifyEveryBid',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'amount', internalType: 'uint256', type: 'uint256' }],
     name: 'setZkGlobalMaxBidAmount',
     outputs: [],
@@ -5936,28 +9084,6 @@ export const umiaValidationHookAbi = [
     name: 'stepMaxBidAmount',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'user', internalType: 'address', type: 'address' },
-      { name: 'stepIndex', internalType: 'uint256', type: 'uint256' },
-      { name: 'proofData', internalType: 'bytes', type: 'bytes' },
-    ],
-    name: 'submitProof',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'users', internalType: 'address[]', type: 'address[]' },
-      { name: 'stepIndex', internalType: 'uint256', type: 'uint256' },
-      { name: 'proofDataArray', internalType: 'bytes[]', type: 'bytes[]' },
-    ],
-    name: 'submitProofBatch',
-    outputs: [],
-    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -5993,12 +9119,19 @@ export const umiaValidationHookAbi = [
       { name: 'maxPrice', internalType: 'uint256', type: 'uint256' },
       { name: 'amount', internalType: 'uint128', type: 'uint128' },
       { name: 'owner', internalType: 'address', type: 'address' },
-      { name: 'sender', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'address', type: 'address' },
       { name: 'hookData', internalType: 'bytes', type: 'bytes' },
     ],
     name: 'validate',
     outputs: [],
     stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'stepIndex', internalType: 'uint256', type: 'uint256' }],
+    name: 'verifiesEveryBid',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -6063,12 +9196,6 @@ export const umiaValidationHookAbi = [
     anonymous: false,
     inputs: [
       {
-        name: 'providerHash',
-        internalType: 'bytes32',
-        type: 'bytes32',
-        indexed: true,
-      },
-      {
         name: 'identityHash',
         internalType: 'bytes32',
         type: 'bytes32',
@@ -6076,6 +9203,25 @@ export const umiaValidationHookAbi = [
       },
     ],
     name: 'IdentityCleared',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'providerHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: true,
+      },
+      {
+        name: 'identityProvider',
+        internalType: 'string',
+        type: 'string',
+        indexed: false,
+      },
+    ],
+    name: 'IdentityProviderSet',
   },
   {
     type: 'event',
@@ -6336,6 +9482,20 @@ export const umiaValidationHookAbi = [
     anonymous: false,
     inputs: [
       {
+        name: 'stepIndex',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      { name: 'required', internalType: 'bool', type: 'bool', indexed: false },
+    ],
+    name: 'VerifyEveryBidSet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
         name: 'owner',
         internalType: 'address',
         type: 'address',
@@ -6371,6 +9531,9 @@ export const umiaValidationHookAbi = [
   },
   { type: 'error', inputs: [], name: 'AlreadyInitialized' },
   { type: 'error', inputs: [], name: 'ArrayLengthMismatch' },
+  { type: 'error', inputs: [], name: 'BidProofContextMismatch' },
+  { type: 'error', inputs: [], name: 'BidProofExpired' },
+  { type: 'error', inputs: [], name: 'BidProofFromFuture' },
   { type: 'error', inputs: [], name: 'CallerNotCCA' },
   {
     type: 'error',
@@ -6380,6 +9543,26 @@ export const umiaValidationHookAbi = [
     ],
     name: 'ContextAddressMismatch',
   },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'credentialStep', internalType: 'uint256', type: 'uint256' },
+      { name: 'currentStep', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'CredentialStepMismatch',
+  },
+  { type: 'error', inputs: [], name: 'ECDSAInvalidSignature' },
+  {
+    type: 'error',
+    inputs: [{ name: 'length', internalType: 'uint256', type: 'uint256' }],
+    name: 'ECDSAInvalidSignatureLength',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 's', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'ECDSAInvalidSignatureS',
+  },
+  { type: 'error', inputs: [], name: 'EmptyIdentityParameters' },
   { type: 'error', inputs: [], name: 'ExpiredDeadline' },
   {
     type: 'error',
@@ -6390,11 +9573,38 @@ export const umiaValidationHookAbi = [
     ],
     name: 'IdentityAlreadyClaimed',
   },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'providerHash', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'IdentityProviderImmutable',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'providerHash', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'IdentityProviderMismatch',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'providerHash', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'IdentityProviderMissing',
+  },
+  { type: 'error', inputs: [], name: 'InvalidIdentityProvider' },
   { type: 'error', inputs: [], name: 'InvalidSignature' },
   { type: 'error', inputs: [], name: 'InvalidStepData' },
   { type: 'error', inputs: [], name: 'MaxBidPriceExceeded' },
   { type: 'error', inputs: [], name: 'NewOwnerIsZeroAddress' },
   { type: 'error', inputs: [], name: 'NoCCA' },
+  {
+    type: 'error',
+    inputs: [{ name: 'stepIndex', internalType: 'uint256', type: 'uint256' }],
+    name: 'NoGateConfigured',
+  },
   { type: 'error', inputs: [], name: 'NoHandoverRequest' },
   {
     type: 'error',
@@ -6415,6 +9625,11 @@ export const umiaValidationHookAbi = [
     name: 'PermitStepTooHigh',
   },
   { type: 'error', inputs: [], name: 'PriceNotAlignedToTick' },
+  {
+    type: 'error',
+    inputs: [{ name: 'identifier', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'ProofAlreadyUsed',
+  },
   {
     type: 'error',
     inputs: [{ name: 'stepIndex', internalType: 'uint256', type: 'uint256' }],
@@ -6444,7 +9659,7 @@ export const umiaValidationHookAbi = [
     ],
     name: 'ProviderNotFound',
   },
-  { type: 'error', inputs: [], name: 'SenderNotBidOwner' },
+  { type: 'error', inputs: [], name: 'RegistrationProofContextMismatch' },
   {
     type: 'error',
     inputs: [{ name: 'stepIndex', internalType: 'uint256', type: 'uint256' }],
@@ -6456,6 +9671,11 @@ export const umiaValidationHookAbi = [
     name: 'ServerPermitRequired',
   },
   { type: 'error', inputs: [], name: 'SignerNotSet' },
+  {
+    type: 'error',
+    inputs: [{ name: 'stepIndex', internalType: 'uint256', type: 'uint256' }],
+    name: 'StepAlreadyStarted',
+  },
   {
     type: 'error',
     inputs: [{ name: 'stepIndex', internalType: 'uint256', type: 'uint256' }],

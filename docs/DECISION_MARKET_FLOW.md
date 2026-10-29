@@ -12,7 +12,7 @@ A venture is an entity that:
 
 - Has its own token (e.g., "AliceVenture" token)
 - Maintains a spot market on Uniswap V4 for its token
-- The venture treasury holds the seed liquidity position (LP token) for the main DEX pair: **venture Token / Money Token** (e.g., AliceVenture/USDC)
+- The venture's spot liquidity vault, V1 `SpotLiquidityVault` or V2 `SpotLiquidityVaultV2` (registered on the Hub as `ventureLiquidityVault`), holds the canonical spot liquidity for the main DEX pair: **venture Token / Money Token** (e.g., AliceVenture/USDC)
 - This spot market determines the real-time price of the venture token
 
 ### Conditional Markets
@@ -20,7 +20,7 @@ A venture is an entity that:
 Decision markets create **conditional markets** for each proposal:
 
 - Each proposal has its own CPMM (Constant Product Market Maker) using Uniswap V2 logic
-- Uses virtual tokens (ERC6909) instead of separate ERC20 contracts for gas efficiency
+- Uses virtual tokens on a minimal in-contract ledger (`balanceOf`/`transfer`, ERC6909-style IDs, no approvals) instead of separate ERC20 contracts for gas efficiency
 - Virtual tokens represent conditional claims: "If this proposal wins, I get X tokens"
 - Prices in conditional markets reflect market sentiment about each proposal's impact on the venture token value
 
@@ -31,7 +31,7 @@ Decision markets create **conditional markets** for each proposal:
 
 ## Token Flow Model: Split/Merge
 
-The system uses a **split/merge model** inspired by markets like Gnosis and metaDAO:
+The system uses a **split/merge model** inspired by conditional token markets such as Gnosis:
 
 ### Split Operation
 
@@ -72,19 +72,19 @@ This model ensures **solvency** at all times:
 
 - The contract only needs to pay out the winning proposal's virtual tokens
 - Since users must split equally across all proposals, the real token backing is always sufficient
-- **Invariant**: `realTokenBalance >= max(userVirtualSupply per proposal)`
+- **Invariant**: for every proposal, `realVentureBalance` covers `userVirtualVentureSupply` plus the pool's venture reserve and accrued venture fees, and `realMoneyBalance` does the same for `userVirtualMoneySupply` (see [Invariant & Solvency Guarantee](#invariant--solvency-guarantee))
 
 ## End-to-End Flow
 
 ### Stage 1: Market Creation (Before Opening)
 
-**Actor**: Market creator/staker (or Hub owner submitting with creator signature)
+**Actor**: Market creator/staker, or the Hub owner on their behalf. Either way `createMarket` carries an EIP-712 approval from the Hub's `marketCreationSigner`.
 
 **Actions**:
 
 1. Alice creates a venture with an initial spot market on Uniswap V4
 2. Alice creates a decision market with multiple proposals
-3. The system removes 50% of the venture's seed liquidity from the spot AMM
+3. The system pulls 50% of the liquidity in the venture's spot liquidity vault, V1 or V2, from the spot AMM (`vault.pullForDecisionMarket`). The vault's TWAP guard reverts while spot sits outside the 30-minute band, or on V2 the 6-hour band as well, and the call is retried
 4. The removed tokens initialize CPMM pools for each proposal (including a "no-op" proposal)
 
 **Example**:
@@ -94,10 +94,10 @@ This model ensures **solvency** at all times:
   - Proposal 1: "No-op" (default, do nothing)
   - Proposal 2: "Cut emissions by 10%"
   - Proposal 3: "Cut emissions by 15%"
-- System removes 50% of seed liquidity from the spot AMM
+- System removes 50% of the vault's current liquidity from the spot AMM
 - Each proposal gets a CPMM initialized with these amounts as virtual tokens
 - The contract holds these virtual tokens (minted to `address(this)`) as initial CPMM reserves
-- `liquidityRemovalInfo` tracks the removed amounts for later accounting
+- The market's `SettleAcct` (`ventureRemoved`, `moneyRemoved`, `liquidityRemoved`; read via `marketSettlementState`) tracks the removed amounts for later accounting, and the seed is folded into `realVentureBalance` / `realMoneyBalance`
 
 **State**:
 
@@ -140,16 +140,16 @@ This model ensures **solvency** at all times:
 
 1. Traders swap virtual tokens within proposal CPMMs using `swapExactIn()` or `swapExactOut()`
 2. Swaps transfer tokens between user and CPMM reserves (no minting/burning)
-3. `userVirtualSupply` tracking updated on each swap
+3. `userVirtualVentureSupply` and `userVirtualMoneySupply` are updated on each swap
 4. Higher prices indicate market confidence in that proposal
-5. Trading continues for 3 days until `tradingEnd`
+5. Trading continues until `tradingEnd` (the market's duration, 3 days by default)
 
 **Key Mechanism**: When a user swaps:
 
 - Input tokens transfer FROM user TO contract (CPMM reserves)
 - Output tokens transfer FROM contract (CPMM reserves) TO user
 - Total supply remains constant - tokens just move between parties
-- `userVirtualSupply` adjusts to track how much users hold vs CPMM reserves
+- `userVirtualVentureSupply` and `userVirtualMoneySupply` adjust to track how much users hold vs CPMM reserves
 
 **Example**:
 
@@ -165,11 +165,13 @@ This model ensures **solvency** at all times:
 
 **Optional**: Traders can call `merge()` to exit positions early by burning equal amounts from all proposals.
 
+**Basket swaps**: `basketSwapExactOut(marketId, zeroForOne, outFractionWad, amountInMaxPerLeg, deadline)` runs one exact-output swap in every proposal, no-op included, each taking the same fraction of its pool's output reserve. Every proposal's price moves by the same factor, so it realigns the market with spot while every ratio between proposals, and therefore the settlement comparison, stays unchanged. Anyone may call it and pays the normal fee on every leg. The market's `activeManager` (the venture's `ActiveLiquidityManager`, snapshotted at `createMarket`) pays no fee, but only through this function; its ordinary swaps pay in full. The ALM uses it for basket arbitrage against spot; see [ActiveLiquidityManager](contracts/ActiveLiquidityManager.md).
+
 **State**:
 
 - Market status: `OPEN`
 - CPMM reserves change based on trades
-- `userVirtualSupply` tracks user holdings per proposal
+- `userVirtualVentureSupply` and `userVirtualMoneySupply` track user holdings per proposal
 - Prices reflect market sentiment
 
 ### Stage 4: Market Resolution
@@ -179,24 +181,30 @@ This model ensures **solvency** at all times:
 **Actions**:
 
 1. After `tradingEnd`, anyone can call `settleMarket()`
-2. System calculates final prices for all proposals
-3. System finds the proposal with the highest price
-4. System compares highest price vs no-op price
-5. If price delta >= `winningMarketThresholdBps`, that proposal wins; otherwise no-op wins
-6. System calculates how much users need for claims: `userVirtualSupply[winningProposal]`
+2. System reads each proposal's TWAP from the `ConditionalMarketOracle` (Q112, frozen at `tradingEnd`)
+3. System finds the proposal with the highest TWAP
+4. System compares the highest TWAP vs the no-op TWAP
+5. If the delta >= the market's `winningThresholdBps` (snapshotted from the Hub at creation), that proposal wins; otherwise no-op wins
+6. System calculates how much users need for claims: the winning proposal's `userVirtualVentureSupply` and `userVirtualMoneySupply` plus the collective LP-share claim (`_previewCollectiveUserLiquidityClaim`), and reserves the winning pool's protocol fees
 7. System calculates excess tokens that can go back to LP
-8. System re-adds excess liquidity to the spot AMM
-9. Winning proposal stored in `_winningProposalByMarketId`
+8. System returns the excess to the venture's spot liquidity vault, V1 or V2 (`vault.returnFromDecisionMarket`), which re-adds it to the spot AMM under its TWAP guard. The guard can revert `settleMarket`; it is permissionless and retried
+9. Winning proposal and TWAP stored in `_settle[marketId]` (read via `winningProposalByMarketId`)
 
 **Settlement Accounting**:
 
 ```
-totalRealTokens = realBalance[marketId] + lpRemovalInfo
-userClaims = userVirtualSupply[winningProposalId]
-excessForLP = totalRealTokens - userClaims - buffer
+// Venture side (seed escrow is already folded into the real balance)
+totalRealVenture = realVentureBalance - winningPoolProtocolFeeVenture
+ventureClaims    = userVirtualVentureSupply[winningProposalId] + collectiveLpVentureClaim   // _previewCollectiveUserLiquidityClaim
+excessVenture    = totalRealVenture > ventureClaims + 1 ? totalRealVenture - ventureClaims - 1 : 0
+
+// Money side, same shape
+totalRealMoney   = realMoneyBalance - winningPoolProtocolFeeMoney
+moneyClaims      = userVirtualMoneySupply[winningProposalId] + collectiveLpMoneyClaim
+excessMoney      = totalRealMoney > moneyClaims + 1 ? totalRealMoney - moneyClaims - 1 : 0
 ```
 
-The excess (after reserving for user claims) goes back to the Uniswap V4 LP position.
+The excess (after reserving for user claims) goes back to the vault's Uniswap V4 position.
 
 **Example**:
 
@@ -218,9 +226,9 @@ The excess (after reserving for user claims) goes back to the Uniswap V4 LP posi
 
 **Actions**:
 
-1. Traders call `claimSettlement(marketId)`
-2. System checks `hasClaimed[marketId][user]` to prevent double claims
-3. System gets trader's balances in the **winning proposal only**
+1. Traders call `claimSettlement(marketId)` (after settlement), or anyone calls `claimSettlementFor(marketId, users)` to redeem on their behalf (tokens always go to the holder; holders already claimed or with nothing to redeem are skipped)
+2. System checks `_hasClaimed[marketId][user]` to prevent double claims
+3. System redeems the trader's LP shares in the winning proposal, then reads their balances in the **winning proposal only**
 4. System burns ALL virtual tokens in winning proposal
 5. System transfers real tokens 1:1 (guaranteed solvent by invariant)
 6. System marks user as claimed
@@ -245,16 +253,17 @@ The excess (after reserving for user claims) goes back to the Uniswap V4 LP posi
 
 **State**:
 
-- `hasClaimed[marketId][user]` = true
+- `_hasClaimed[marketId][user]` = true
 - Virtual tokens burned
 - Real tokens distributed
 
 ## Invariant & Solvency Guarantee
 
-The system maintains a critical invariant after every split, merge, and swap:
+The system checks a critical invariant after every split and merge (`_checkInvariant`), per proposal and per token:
 
 ```solidity
-realTokenBalance + lpRemovalInfo >= max(userVirtualSupply per proposal)
+realVentureBalance >= userVirtualVentureSupply + cpmmReserve0 + accruedFeeVenture
+realMoneyBalance   >= userVirtualMoneySupply   + cpmmReserve1 + accruedFeeMoney
 ```
 
 This guarantees that:
@@ -271,7 +280,7 @@ This guarantees that:
 3. **Only Winning Proposal Matters**: Balances in losing proposals are irrelevant for claims
 4. **Solvency Invariant**: Real token backing always covers worst-case claims
 5. **No-Op Default**: If no proposal meets the threshold, the no-op proposal wins
-6. **Single Claim**: `hasClaimed` mapping prevents double-claiming
+6. **Single Claim**: `_hasClaimed` mapping prevents double-claiming
 7. **Constant Supply**: Swaps directly manipulate balances to move tokens between users and CPMM reserves (no supply change)
 
 ## Price Calculation
@@ -279,19 +288,20 @@ This guarantees that:
 Prices are calculated as: `price = reserve1 / reserve0` (virtualMoney per virtualVenture)
 
 - Higher price = market thinks proposal will increase venture value
-- Price in Q96 format: `priceX96 = (reserve1 * 2^96) / reserve0`
-- Price delta: `deltaBps = ((winningPrice - noOpPrice) * 10,000) / noOpPrice`
+- Spot price in Q96 format: `priceX96 = (reserve1 * 2^96) / reserve0` (`getPriceX96`)
+- Settlement uses each proposal's TWAP in Q112 format (`getProposalTWAP`), a time-weighted geometric mean over the trading window
+- Price delta: `deltaBps = ((highestTWAP - noOpTWAP) * 10,000) / noOpTWAP`
 
 ## CPMM Mechanics
 
 - Uses constant product formula: `x * y = k`
-- 0.3% fee on swaps (stays in reserves)
+- Swap fee of `decisionSwapFeeBps` (Hub default 1%), snapshotted per market at creation. The protocol keeps `decisionProtocolFeeCutBps` of it (default 50%), collected after settlement from the winning pool; the rest stays in the pool reserves
 - Slippage protection via `amountOutMin` / `amountInMax`
 - Price impact protection via `maxPriceImpactBps`
-- Users can add liquidity to CPMMs (reduces their userVirtualSupply)
+- Users can add liquidity to CPMMs (reduces `userVirtualVentureSupply` and `userVirtualMoneySupply`)
 
 ## Gas Efficiency
 
-- Uses ERC6909 instead of separate ERC20 contracts for virtual tokens
+- Uses a minimal ERC6909-style ledger instead of separate ERC20 contracts for virtual tokens
 - Custom CPMM instead of full Uniswap V4 pools for conditional markets
 - Single contract manages all proposals and markets

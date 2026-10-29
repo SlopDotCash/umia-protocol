@@ -14,7 +14,7 @@ contract DecisionMarketTWAPTest is DecisionMarketBase {
         Market memory market = _marketById(marketId);
         uint256 proposal1Id = market.proposalIds[1];
 
-        (,,,, uint32 lastTimestamp, bool initialized) = conditionalMarketOracle.oracleStates(proposal1Id);
+        (,,,,, uint32 lastTimestamp,, bool initialized) = conditionalMarketOracle.oracleStates(proposal1Id);
 
         assertTrue(initialized, "Oracle should be initialized at market creation");
         assertEq(lastTimestamp, uint32(market.tradingStart), "Oracle anchored at trading start");
@@ -32,15 +32,15 @@ contract DecisionMarketTWAPTest is DecisionMarketBase {
         vm.prank(bob);
         mm.split(marketId, 0, 10_000e6);
 
-        (uint256 cum0Before,,,,,) = conditionalMarketOracle.oracleStates(proposal1Id);
+        (int64 cum0Before,,,,,,,) = conditionalMarketOracle.oracleStates(proposal1Id);
 
         vm.warp(block.timestamp + 1 hours);
 
         _swapExactIn(bob, proposal1Id, 1_000e6, false);
 
-        (uint256 cum0After,,,, uint32 tsAfter,) = conditionalMarketOracle.oracleStates(proposal1Id);
+        (int64 cum0After,,,,, uint32 tsAfter,,) = conditionalMarketOracle.oracleStates(proposal1Id);
 
-        assertGt(cum0After, cum0Before, "Cumulative price should increase after time passes");
+        assertNotEq(cum0After, cum0Before, "Cumulative tick should accrue after time passes");
         assertEq(tsAfter, uint32(block.timestamp), "Timestamp should be updated");
     }
 
@@ -51,7 +51,7 @@ contract DecisionMarketTWAPTest is DecisionMarketBase {
 
         for (uint256 i = 0; i < market.proposalIds.length; i++) {
             uint256 pid = market.proposalIds[i];
-            (,,,, uint32 lastTimestamp, bool initialized) = conditionalMarketOracle.oracleStates(pid);
+            (,,,,, uint32 lastTimestamp,, bool initialized) = conditionalMarketOracle.oracleStates(pid);
             assertTrue(initialized, "Every proposal initialized after creation");
             assertEq(lastTimestamp, uint32(market.tradingStart), "Oracle anchored at trading start");
         }
@@ -177,8 +177,8 @@ contract DecisionMarketTWAPTest is DecisionMarketBase {
 
         mm.settleMarket(marketId);
 
-        (,,,, uint32 tsProp1After,) = conditionalMarketOracle.oracleStates(proposal1Id);
-        (,,,, uint32 tsNoopAfter,) = conditionalMarketOracle.oracleStates(noopId);
+        (,,,,, uint32 tsProp1After,,) = conditionalMarketOracle.oracleStates(proposal1Id);
+        (,,,,, uint32 tsNoopAfter,,) = conditionalMarketOracle.oracleStates(noopId);
 
         assertEq(tsProp1After, uint32(market.tradingEnd), "Proposal1 oracle should be capped at tradingEnd");
         assertEq(tsNoopAfter, uint32(market.tradingEnd), "Noop oracle should be capped at tradingEnd");
@@ -191,7 +191,7 @@ contract DecisionMarketTWAPTest is DecisionMarketBase {
         uint256 proposal1Id = market.proposalIds[1];
         uint256 noopId = market.proposalIds[0];
 
-        (,,,,, bool initialized) = conditionalMarketOracle.oracleStates(proposal1Id);
+        (,,,,,,, bool initialized) = conditionalMarketOracle.oracleStates(proposal1Id);
         assertTrue(initialized, "Oracle initialized even without trades");
 
         vm.warp(market.tradingEnd + 1);

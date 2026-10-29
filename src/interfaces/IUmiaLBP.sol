@@ -30,6 +30,7 @@ interface IUmiaLBP {
     error InitializerTokenSplitIsZero();
     error AlreadyMigrated();
     error VaultDeploymentFailed();
+    error LaunchSplitUnset();
 
     // ─────────────────────────────────────────────────────────
     // Events

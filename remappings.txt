@@ -4,8 +4,15 @@
 @continuous-clearing-auction=lib/continuous-clearing-auction/src/
 @uniswap/v4-core=lib/v4-core/
 @uniswap/v4-periphery=lib/v4-periphery/
-v4-periphery/=lib/v4-periphery/
 @uniswap/permit2=lib/v4-periphery/lib/permit2/
 @blocknumberish/=lib/continuous-clearing-auction/lib/blocknumberish/
 blocknumberish/=lib/continuous-clearing-auction/lib/blocknumberish/
 @metavest/=lib/metavest/src/
+liquidity-launcher/=lib/liquidity-launcher/
+lib/universal-router/:@uniswap/v4-periphery/=lib/universal-router/lib/v4-periphery/
+permit2/=lib/v4-periphery/lib/permit2/
+solmate/=lib/v4-core/lib/solmate/
+@uniswap/v2-core/=lib/v2-core/
+@uniswap/v3-core/=lib/v3-core/
+@uniswap/v3-periphery/=lib/universal-router/lib/v3-periphery/
+@uniswap/universal-router/=lib/universal-router/

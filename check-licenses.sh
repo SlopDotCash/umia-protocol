@@ -12,6 +12,7 @@ MIT_FILES=(
     "src/libraries/GovernanceTypes.sol"
     "src/libraries/MarketCoreTypes.sol"
     "src/libraries/SpotMarketOracle.sol"
+    "src/libraries/TickSlew.sol"
     "src/libraries/PositionAmounts.sol"
     "src/libraries/TwapMath.sol"
     "src/libraries/CalendarLib.sol"

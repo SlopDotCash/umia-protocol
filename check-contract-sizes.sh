@@ -18,6 +18,12 @@ CONTRACTS=(
     "GovernanceExecutor"
     "Venture"
     "UmiaLBPFactory"
+    "UmiaHookV2"
+    "SpotLiquidityVaultV2"
+    "ActiveLiquidityManager"
+    "SpotMigrator"
+    "UmiaLBPV2"
+    "UmiaLBPFactoryV2"
 )
 
 failed=0

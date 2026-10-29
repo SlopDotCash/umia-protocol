@@ -2,7 +2,7 @@
 
 Typed ABIs, raw JSON exports, and the deployed address book for the Umia smart contracts. ABIs are generated from `forge build` output via `wagmi-cli`; addresses come from the monorepo's `contracts.json`.
 
-> Published to npm as **`umia-abi`** (unscoped). Inside the monorepo it's the `@umia/abi` workspace package — the name is swapped at publish time (see `publish.sh`).
+> Published to npm as **`umia-abi`** (unscoped). Inside the monorepo it's the `@umia/abi` workspace package; the name is swapped at publish time (see `publish.sh`).
 
 ## Layout
 
@@ -45,13 +45,13 @@ import addresses from "umia-abi/addresses.json";
 
 ## Regenerate
 
-After changing any of the contracts listed in `src/contracts.ts`:
+After changing any of the contracts listed in `src/contracts.ts`, from `abi/`:
 
 ```bash
-just abi
+bun run codegen
 ```
 
-This runs `wagmi generate` (which calls `forge build` internally), dumps the raw JSON, and regenerates the address book. Commit the regenerated `src/generated.ts`, `json/*.json`, `addresses.json`, and `src/generated-addresses.ts` alongside the contract change.
+This runs `wagmi generate` (which calls `forge build` internally), dumps the raw JSON, and regenerates the address book. The package's devDependencies use the monorepo's `catalog:` ranges, so codegen runs from the monorepo workspace; the published package carries no dev dependencies. Commit the regenerated `src/generated.ts`, `json/*.json`, `addresses.json`, and `src/generated-addresses.ts` alongside the contract change.
 
 ## Addresses
 
@@ -61,6 +61,8 @@ monorepo's root `contracts.json`, narrowed to what's useful publicly: the
 resets without warning), minus operational fields like `anvilUrl` and
 `maxReorgDepth`.
 
+`startBlock` is the block Umia's own indexer syncs that chain from. On the mainnet chains it is the protocol's deployment block; on a testnet it can sit after a reset or after history-pruning upstreams forced a later start, so do not read it as the first protocol transaction there.
+
 ```ts
 import { addresses, getChainAddressesById, getContractAddress } from "umia-abi";
 
@@ -69,14 +71,15 @@ getChainAddressesById("mainnet", 8453)?.startBlock; // indexer start height
 addresses.mainnet.base.umia.ccaFactory;             // literal-typed
 ```
 
-Regenerate with `bun run addresses` (or `just abi`, which includes it). CI
-re-derives it on any `contracts.json` change via
-`smart-contracts/check-addresses.sh`, so a redeploy that updates `contracts.json`
-without regenerating fails the build.
+Regenerate with `bun run addresses` (or `bun run codegen`, which includes it).
+CI re-derives it on any `contracts.json` change via `check-addresses.sh`, so a
+redeploy that updates `contracts.json` without regenerating fails the build.
+Outside the monorepo, point `CONTRACTS_JSON` at a copy of the file; without one
+the address step is skipped and the committed address book is kept.
 
 ## Adding a contract
 
-Add the name to the appropriate list in `src/contracts.ts` — `CONTRACTS` (in-scope deployables), `INTERFACES` (spec-only / integrator-facing), or `LIBRARIES` (with custom errors) — then run `just abi`.
+Add the name to the appropriate list in `src/contracts.ts`: `CONTRACTS` (in-scope deployables), `INTERFACES` (spec-only / integrator-facing), or `LIBRARIES` (with custom errors). Then run `bun run codegen`.
 
 ## Decoding errors
 
@@ -98,14 +101,14 @@ The three lists exist because solc doesn't always bubble errors from libraries a
 
 ## Publishing to npm
 
-1. Bump `version` in `smart-contracts/abi/package.json`.
+1. Bump `version` in `abi/package.json`.
 2. Commit the bump.
-3. From the repo root:
+3. From `abi/`:
    ```bash
-   just publish-abi
+   ./publish.sh
    ```
 
-The recipe refuses to publish if `smart-contracts/abi/` has uncommitted changes or if `just abi` would produce a diff (i.e. the committed ABIs are stale). It then typechecks, compiles `src/` to `dist/`, and publishes as **`umia-abi`** with public access.
+The script refuses to publish if `abi/` has uncommitted changes or if `bun run codegen` would produce a diff (i.e. the committed ABIs are stale). It then typechecks, compiles `src/` to `dist/`, and publishes as **`umia-abi`** with public access.
 
 Two manifest fields are publish-time only, applied by `publish-manifest.ts` and reverted by a trap in `publish.sh`: the `@umia/abi` workspace name becomes the unscoped `umia-abi`, and the entrypoints move from `src/*.ts` to `dist/*.js`. In-repo consumers resolve the TypeScript sources directly; published consumers can't, because Node refuses to type-strip inside `node_modules`.
 

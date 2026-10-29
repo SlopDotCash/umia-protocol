@@ -22,6 +22,19 @@
   },
   {
     "type": "function",
+    "name": "BID_PROOF_MAX_AGE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "DOMAIN_SEPARATOR",
     "inputs": [],
     "outputs": [
@@ -84,6 +97,30 @@
   },
   {
     "type": "function",
+    "name": "authorizesWithoutCredential",
+    "inputs": [
+      {
+        "name": "stepIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "user",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "cancelOwnershipHandover",
     "inputs": [],
     "outputs": [],
@@ -106,11 +143,6 @@
     "type": "function",
     "name": "clearIdentity",
     "inputs": [
-      {
-        "name": "providerHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
       {
         "name": "identityHash",
         "type": "bytes32",
@@ -293,11 +325,6 @@
     "name": "identityOwner",
     "inputs": [
       {
-        "name": "providerHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
         "name": "identityHash",
         "type": "bytes32",
         "internalType": "bytes32"
@@ -308,6 +335,25 @@
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "identityProvider",
+    "inputs": [
+      {
+        "name": "providerHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "stateMutability": "view"
@@ -408,6 +454,25 @@
   },
   {
     "type": "function",
+    "name": "multicall",
+    "inputs": [
+      {
+        "name": "data",
+        "type": "bytes[]",
+        "internalType": "bytes[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes[]",
+        "internalType": "bytes[]"
+      }
+    ],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
     "name": "owner",
     "inputs": [],
     "outputs": [
@@ -485,12 +550,43 @@
   },
   {
     "type": "function",
+    "name": "requireStepNotStarted",
+    "inputs": [
+      {
+        "name": "stepIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "setCCA",
     "inputs": [
       {
         "name": "_newCCA",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setIdentityProvider",
+    "inputs": [
+      {
+        "name": "providerHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "identityProvider_",
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "outputs": [],
@@ -588,6 +684,24 @@
   },
   {
     "type": "function",
+    "name": "setVerifyEveryBid",
+    "inputs": [
+      {
+        "name": "stepIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "required",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setZkGlobalMaxBidAmount",
     "inputs": [
       {
@@ -630,52 +744,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "submitProof",
-    "inputs": [
-      {
-        "name": "user",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "stepIndex",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "proofData",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "submitProofBatch",
-    "inputs": [
-      {
-        "name": "users",
-        "type": "address[]",
-        "internalType": "address[]"
-      },
-      {
-        "name": "stepIndex",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "proofDataArray",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -755,7 +823,7 @@
         "internalType": "address"
       },
       {
-        "name": "sender",
+        "name": "",
         "type": "address",
         "internalType": "address"
       },
@@ -767,6 +835,25 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "verifiesEveryBid",
+    "inputs": [
+      {
+        "name": "stepIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -867,16 +954,29 @@
     "name": "IdentityCleared",
     "inputs": [
       {
+        "name": "identityHash",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "IdentityProviderSet",
+    "inputs": [
+      {
         "name": "providerHash",
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
       },
       {
-        "name": "identityHash",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
+        "name": "identityProvider",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
       }
     ],
     "anonymous": false
@@ -1157,6 +1257,25 @@
   },
   {
     "type": "event",
+    "name": "VerifyEveryBidSet",
+    "inputs": [
+      {
+        "name": "stepIndex",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "required",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "ZkGlobalBidAccrued",
     "inputs": [
       {
@@ -1205,6 +1324,21 @@
   },
   {
     "type": "error",
+    "name": "BidProofContextMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BidProofExpired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BidProofFromFuture",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "CallerNotCCA",
     "inputs": []
   },
@@ -1223,6 +1357,54 @@
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "CredentialStepMismatch",
+    "inputs": [
+      {
+        "name": "credentialStep",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "currentStep",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ECDSAInvalidSignature",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ECDSAInvalidSignatureLength",
+    "inputs": [
+      {
+        "name": "length",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ECDSAInvalidSignatureS",
+    "inputs": [
+      {
+        "name": "s",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "EmptyIdentityParameters",
+    "inputs": []
   },
   {
     "type": "error",
@@ -1252,6 +1434,44 @@
   },
   {
     "type": "error",
+    "name": "IdentityProviderImmutable",
+    "inputs": [
+      {
+        "name": "providerHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "IdentityProviderMismatch",
+    "inputs": [
+      {
+        "name": "providerHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "IdentityProviderMissing",
+    "inputs": [
+      {
+        "name": "providerHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidIdentityProvider",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidSignature",
     "inputs": []
   },
@@ -1274,6 +1494,17 @@
     "type": "error",
     "name": "NoCCA",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoGateConfigured",
+    "inputs": [
+      {
+        "name": "stepIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1322,6 +1553,17 @@
     "type": "error",
     "name": "PriceNotAlignedToTick",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ProofAlreadyUsed",
+    "inputs": [
+      {
+        "name": "identifier",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1384,7 +1626,7 @@
   },
   {
     "type": "error",
-    "name": "SenderNotBidOwner",
+    "name": "RegistrationProofContextMismatch",
     "inputs": []
   },
   {
@@ -1413,6 +1655,17 @@
     "type": "error",
     "name": "SignerNotSet",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "StepAlreadyStarted",
+    "inputs": [
+      {
+        "name": "stepIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",

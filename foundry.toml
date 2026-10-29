@@ -10,7 +10,10 @@ optimizer_runs = 200
 solc = "0.8.26"
 ignored_warnings_from = ["lib/"]
 # Upgrade scripts read build artifacts to resolve linked library addresses.
-fs_permissions = [{ access = "read", path = "./out" }, { access = "read", path = "../contracts.json" }]
+fs_permissions = [
+    { access = "read", path = "./out" },
+    { access = "read", path = "../contracts.json" },
+]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
 
@@ -29,13 +32,10 @@ remappings = [
     # prefix to lib/liquidity-launcher/src/ and the paths double up. Same pinned commit as
     # CCA's own nested copy, so this resolves to identical sources.
     'liquidity-launcher/=lib/liquidity-launcher/',
-    # Universal Router, deployed by DeployV4Infra on chains Uniswap has not shipped
-    # v4 to (Monad testnet). Pinned to 2.1.1, the version already deployed on Base
-    # and Sepolia: it builds against the v4 and permit2 we already vendor, so the
-    # remappings below redirect its nested copies of those. Only the V4 + Permit2
-    # command paths are reachable, but the V2/V3 and v3->v4 migrator modules still
-    # import interfaces from v2-core, v3-core and its own nested v3-periphery.
-    # Those are all pragma >=0.5.0, so they compile here.
+    # Keep Universal Router's v4 path on its own pinned periphery so devnet
+    # deployments use the same minHopPriceX36 ABI as public-chain routers.
+    # Context-scoping leaves Umia's protocol contracts on their existing pin.
+    'lib/universal-router/:@uniswap/v4-periphery/=lib/universal-router/lib/v4-periphery/',
     'permit2/=lib/v4-periphery/lib/permit2/',
     'solmate/=lib/v4-core/lib/solmate/',
     '@uniswap/v2-core/=lib/v2-core/',
@@ -46,4 +46,13 @@ remappings = [
 
 [lint]
 ignore = ["test/**/*.sol", "script/**/*.sol"]
-exclude_lints = ["block-timestamp", "incorrect-shift", "divide-before-multiply", "unsafe-typecast"]
+exclude_lints = [
+    "block-timestamp",
+    "incorrect-shift",
+    "divide-before-multiply",
+    "unsafe-typecast",
+]
+
+[etherscan]
+robinhood = { key = "${ETHERSCAN_API_KEY}", chain = 4663, url = "https://api.etherscan.io/v2/api?chainid=4663" }
+monad-testnet = { key = "${ETHERSCAN_API_KEY}", chain = 10143, url = "https://api.etherscan.io/v2/api?chainid=10143" }

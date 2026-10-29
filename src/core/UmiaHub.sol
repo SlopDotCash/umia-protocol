@@ -13,11 +13,15 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
 import {IUmiaHub} from "../interfaces/IUmiaHub.sol";
 import {IVenture} from "../interfaces/IVenture.sol";
+import {ISpotLiquidityVault} from "../interfaces/ISpotLiquidityVault.sol";
 import {IUmiaMarketCore} from "../interfaces/IUmiaMarketCore.sol";
 import {Venture} from "./Venture.sol";
 import {VentureProxy} from "./VentureProxy.sol";
 import {VentureToken} from "../tokens/VentureToken.sol";
 import {IVentureToken} from "../interfaces/IVentureToken.sol";
+import {IVentureVestingAuthority} from "../interfaces/IVentureVestingAuthority.sol";
+import {SpotLiquidityV2Deploy} from "../libraries/SpotLiquidityV2Deploy.sol";
+import {ActiveSlices} from "../libraries/ActiveSlices.sol";
 
 /// @title UmiaHub
 /// @notice The hub registry contract for Umia ventures
@@ -42,6 +46,8 @@ contract UmiaHub is Initializable, UUPSUpgradeable, Ownable, IUmiaHub {
 
     /// @notice The maximum decision-market execution delay (12 hours).
     uint32 public constant MAX_EXECUTION_DELAY = 12 hours;
+    /// @notice The minimum decision-market execution delay (1 hour).
+    uint32 public constant MIN_EXECUTION_DELAY = 1 hours;
     /// @notice The decision-market execution delay applied on initialization (4 hours).
     uint32 public constant DEFAULT_EXECUTION_DELAY = 4 hours;
 
@@ -146,8 +152,27 @@ contract UmiaHub is Initializable, UUPSUpgradeable, Ownable, IUmiaHub {
     ///      individually via `VentureVestingAuthority.setVestingAdminRevoked`.
     address public vestingAdmin;
 
+    /// @notice The only caller allowed to move a venture's spot vault pointer to a new vault.
+    address public spotMigrator;
+
+    /// @notice Default keeper for every venture's ActiveLiquidityManager unless the venture overrides it.
+    address public activeLiquidityKeeper;
+
+    /// @notice Venture id → the VentureVestingAuthority that owns its vesting grants.
+    /// @dev The canonical link between a venture and its grants. Adapters are deployed through the
+    ///      permissionless MetaVesT factory, so nothing else onchain can tell a real one from a copy.
+    mapping(uint256 ventureId => address) public ventureVestingAuthority;
+
+    /// @notice Share of a V2 launch's pool-bound liquidity that bootstraps the anchor vault; the rest
+    ///         funds the ALM. Zero means unset, and `UmiaLBPV2.migrate` reverts until the owner sets it.
+    uint16 public launchAnchorBps;
+
+    /// @notice Half width, in ticks, of the single range a V2 launch opens for the ALM around the
+    ///         clearing tick. Zero means unset.
+    int24 public launchActiveHalfWidthTicks;
+
     /// @notice Gap for future upgrades.
-    uint256[50] private __gap;
+    uint256[46] private __gap;
 
     // ─────────────────────────────────────────────────────────
     // Upgrade
@@ -284,9 +309,9 @@ contract UmiaHub is Initializable, UUPSUpgradeable, Ownable, IUmiaHub {
     }
 
     /// @notice Set the delay after a market settles before its winning proposal can be executed.
-    /// @param delay The new execution delay in seconds (at most MAX_EXECUTION_DELAY).
+    /// @param delay The new execution delay in seconds, between MIN_EXECUTION_DELAY and MAX_EXECUTION_DELAY.
     function setDecisionMarketExecutionDelay(uint32 delay) external onlyOwner {
-        if (delay > MAX_EXECUTION_DELAY) revert InvalidExecutionDelay();
+        if (delay < MIN_EXECUTION_DELAY || delay > MAX_EXECUTION_DELAY) revert InvalidExecutionDelay();
         uint32 oldDelay = decisionMarketExecutionDelay;
         decisionMarketExecutionDelay = delay;
         emit DecisionMarketExecutionDelayUpdated(oldDelay, delay);
@@ -326,8 +351,9 @@ contract UmiaHub is Initializable, UUPSUpgradeable, Ownable, IUmiaHub {
 
     /// @notice Set the spot swap fee, in bps of the trade.
     /// @param bps The new fee, capped at MAX_SWAP_FEE_BPS.
+    /// @dev Nonzero: a V2 pool's active-liquidity band is the fee in ticks.
     function setSpotSwapFeeBps(uint16 bps) external onlyOwner {
-        if (bps > MAX_SWAP_FEE_BPS) revert InvalidBps();
+        if (bps == 0 || bps > MAX_SWAP_FEE_BPS) revert InvalidBps();
         uint16 oldBps = spotSwapFeeBps;
         spotSwapFeeBps = bps;
         emit SpotSwapFeeBpsUpdated(oldBps, bps);
@@ -361,6 +387,9 @@ contract UmiaHub is Initializable, UUPSUpgradeable, Ownable, IUmiaHub {
     }
 
     /// @notice Set the canonical tick spacing applied to every venture's spot pool at migration.
+    /// @dev Clears `launchActiveHalfWidthTicks` when it no longer fits the new spacing, so launches
+    ///      revert `LaunchSplitUnset` until the owner sets a width that does, instead of failing inside
+    ///      the ALM seed.
     /// @param tickSpacing The V4 pool tick spacing, within [MIN_TICK_SPACING, MAX_TICK_SPACING].
     function setDefaultPoolTickSpacing(int24 tickSpacing) external onlyOwner {
         if (tickSpacing < TickMath.MIN_TICK_SPACING || tickSpacing > TickMath.MAX_TICK_SPACING) {
@@ -368,6 +397,35 @@ contract UmiaHub is Initializable, UUPSUpgradeable, Ownable, IUmiaHub {
         }
         defaultPoolTickSpacing = tickSpacing;
         emit DefaultPoolTickSpacingUpdated(tickSpacing);
+        int24 halfWidth = launchActiveHalfWidthTicks;
+        if (halfWidth != 0 && (halfWidth % tickSpacing != 0 || halfWidth > _maxLaunchActiveHalfWidth())) {
+            launchActiveHalfWidthTicks = 0;
+            emit LaunchActiveHalfWidthTicksUpdated(halfWidth, 0);
+        }
+    }
+
+    /// @notice Set how a V2 launch splits its pool-bound liquidity: `bps` to the anchor vault, the rest
+    ///         to the ALM. At least `SpotLiquidityV2Deploy.MIN_ANCHOR_BPS`; `MAX_BPS` gives the ALM nothing.
+    function setLaunchAnchorBps(uint16 bps) external onlyOwner {
+        if (bps < SpotLiquidityV2Deploy.MIN_ANCHOR_BPS || bps > MAX_BPS) revert InvalidBps();
+        uint16 oldBps = launchAnchorBps;
+        launchAnchorBps = bps;
+        emit LaunchAnchorBpsUpdated(oldBps, bps);
+    }
+
+    /// @notice Set the half width of the range a V2 launch opens for the ALM. A positive multiple of
+    ///         `defaultPoolTickSpacing`, no wider than the ALM's default `maxWidthTicks` allows.
+    function setLaunchActiveHalfWidthTicks(int24 halfWidth) external onlyOwner {
+        if (halfWidth <= 0 || halfWidth % defaultPoolTickSpacing != 0 || halfWidth > _maxLaunchActiveHalfWidth()) {
+            revert InvalidLaunchActiveHalfWidth();
+        }
+        int24 oldHalfWidth = launchActiveHalfWidthTicks;
+        launchActiveHalfWidthTicks = halfWidth;
+        emit LaunchActiveHalfWidthTicksUpdated(oldHalfWidth, halfWidth);
+    }
+
+    function _maxLaunchActiveHalfWidth() internal view returns (int24) {
+        return int24(uint24(ActiveSlices.DEFAULT_MAX_WIDTH_SPACINGS)) * defaultPoolTickSpacing / 2;
     }
 
     /// @notice Set the delay (in blocks) after an auction's end before its LBP may migrate.
@@ -393,14 +451,57 @@ contract UmiaHub is Initializable, UUPSUpgradeable, Ownable, IUmiaHub {
 
     /// @notice Register the SpotLiquidityVault for a venture. One-shot, callable only by the
     ///         venture's LBP (which deploys the vault during migration).
+    /// @dev The vault must name this venture and this Hub, so a contract posing as a venture cannot
+    ///      register someone else's vault and have the event point indexers at it.
     /// @param venture The venture address.
     /// @param vault The deployed SpotLiquidityVault address.
     function registerSpotLiquidityVault(address venture, address vault) external {
         if (msg.sender != IVenture(venture).lbp()) revert NotVentureLBP();
-        if (vault == address(0)) revert InvalidToken();
         if (_ventureLiquidityVault[venture] != address(0)) revert SpotLiquidityVaultAlreadyRegistered();
+        if (!_isVaultOf(venture, vault)) revert InvalidSpotLiquidityVault();
         _ventureLiquidityVault[venture] = vault;
         emit SpotLiquidityVaultRegistered(venture, vault);
+    }
+
+    /// @notice Move a venture's spot vault pointer to `newVault`. Every consumer (market creation,
+    ///         settlement, liquidation, the vesting TWAP condition) resolves the vault through this
+    ///         pointer, so they all follow the move.
+    /// @dev Only `spotMigrator`. Reverts while a decision market still holds liquidity pulled from the
+    ///      old vault, since settlement returns it there.
+    function migrateSpotLiquidityVault(address venture, address newVault) external {
+        if (msg.sender != spotMigrator) revert NotSpotMigrator();
+        address oldVault = _ventureLiquidityVault[venture];
+        if (oldVault == address(0)) revert SpotLiquidityVaultNotRegistered();
+        if (
+            newVault == oldVault || !_isVaultOf(venture, newVault) || !ISpotLiquidityVault(newVault).isPoolInitialized()
+        ) {
+            revert InvalidSpotLiquidityVault();
+        }
+        ISpotLiquidityVault old = ISpotLiquidityVault(oldVault);
+        if (old.totalDeployedVenture() != 0 || old.totalDeployedMoney() != 0) revert SpotLiquidityVaultStillFunded();
+        _ventureLiquidityVault[venture] = newVault;
+        emit SpotLiquidityVaultMigrated(venture, oldVault, newVault);
+    }
+
+    /// @dev Vaults name their venture and Hub at construction.
+    function _isVaultOf(address venture, address vault) internal view returns (bool) {
+        if (vault.code.length == 0) return false;
+        ISpotLiquidityVault v = ISpotLiquidityVault(vault);
+        return v.venture() == venture && v.HUB() == address(this);
+    }
+
+    /// @notice Set the spot migrator. Zero disables migrations.
+    function setSpotMigrator(address _migrator) external onlyOwner {
+        address oldMigrator = spotMigrator;
+        spotMigrator = _migrator;
+        emit SpotMigratorUpdated(oldMigrator, _migrator);
+    }
+
+    /// @notice Set the protocol-wide default ActiveLiquidityManager keeper.
+    function setActiveLiquidityKeeper(address _keeper) external onlyOwner {
+        address oldKeeper = activeLiquidityKeeper;
+        activeLiquidityKeeper = _keeper;
+        emit ActiveLiquidityKeeperUpdated(oldKeeper, _keeper);
     }
 
     /// @notice Set the UmiaMarketStake address
@@ -477,6 +578,23 @@ contract UmiaHub is Initializable, UUPSUpgradeable, Ownable, IUmiaHub {
         address oldAdmin = vestingAdmin;
         vestingAdmin = _admin;
         emit VestingAdminUpdated(oldAdmin, _admin);
+    }
+
+    /// @notice Record the VentureVestingAuthority that owns a venture's vesting grants.
+    /// @dev `address(0)` clears the link. A nonzero authority must serve this hub and, once bound,
+    ///      this venture's treasury.
+    /// @param ventureId The venture.
+    /// @param authority Its VentureVestingAuthority, or `address(0)` to clear.
+    function setVentureVestingAuthority(uint256 ventureId, address authority) external onlyOwner {
+        address venture = _ventureById[ventureId].venture;
+        if (venture == address(0)) revert VentureNotFound();
+        if (authority != address(0)) {
+            IVentureVestingAuthority adapter = IVentureVestingAuthority(authority);
+            if (adapter.hub() != address(this)) revert InvalidVestingAuthority();
+            if (adapter.bound() && adapter.treasury() != venture) revert InvalidVestingAuthority();
+        }
+        ventureVestingAuthority[ventureId] = authority;
+        emit VentureVestingAuthoritySet(ventureId, authority);
     }
 
     // ─────────────────────────────────────────────────────────

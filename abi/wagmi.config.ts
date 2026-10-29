@@ -7,7 +7,8 @@ export default defineConfig({
   plugins: [
     foundry({
       project: "../",
-      forge: { clean: true, build: true },
+      // CI builds in an earlier step; building again here recompiles the whole via-IR project.
+      forge: { clean: !process.env.CI, build: !process.env.CI },
       include: [...FOUNDRY_ARTIFACT_PATHS],
       // `include` is explicit, so the exclude list only guards against
       // accidental cross-matches. Don't blanket-exclude `interfaces/**`

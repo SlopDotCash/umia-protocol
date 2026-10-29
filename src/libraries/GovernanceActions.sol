@@ -9,6 +9,8 @@ import {IVenture} from "../interfaces/IVenture.sol";
 import {ILiquidator} from "../interfaces/ILiquidator.sol";
 import {IUmiaHub} from "../interfaces/IUmiaHub.sol";
 import {ISpotLiquidityVault} from "../interfaces/ISpotLiquidityVault.sol";
+import {ISpotLiquidityVaultV2} from "../interfaces/ISpotLiquidityVaultV2.sol";
+import {IActiveLiquidityManager} from "../interfaces/IActiveLiquidityManager.sol";
 
 /// @title GovernanceActions
 /// @notice Stateless action validation and execution helpers for governance payloads.
@@ -247,7 +249,6 @@ library GovernanceActions {
         // SET_ALLOWANCE(token, spender, 0) actions ordered before this action, else a spender can drain
         // claim-backing assets via transferFrom post-snapshot. See docs/GOVERNANCE_TREASURY_LAYER.md.
         address ventureToken = venture.token();
-        if (IERC20(ventureToken).totalSupply() == 0) revert InvalidParams();
 
         // Redeem the venture's spot LP shares (pool reserves + its pro-rata idle) into the treasury
         // while still not liquidating — setLiquidator locks out this executeCall path, and the vault
@@ -263,14 +264,20 @@ library GovernanceActions {
                     vault, 0, abi.encodeCall(ISpotLiquidityVault.withdraw, (shares, 0, 0, address(venture)))
                 );
             }
+            // Same for a V2 pool's active liquidity manager, whose withdrawAll is venture-only. V1
+            // vaults have no manager getter.
+            try ISpotLiquidityVaultV2(vault).activeManager() returns (address manager) {
+                if (manager != address(0)) {
+                    venture.executeCall(manager, 0, abi.encodeCall(IActiveLiquidityManager.withdrawAll, ()));
+                }
+            } catch {}
         }
 
-        // Snapshot the CLAIMABLE supply, not the raw total supply. Venture tokens held by the treasury
-        // itself — its redeemed LP share plus any other treasury balance — can never call claim(), so
-        // counting them in the pro-rata denominator would strand a matching fraction of every
-        // liquidation asset in the venture forever. Computed after the redemption so the freshly
-        // returned LP tokens are excluded too.
-        uint256 claimableSupply = IERC20(ventureToken).totalSupply() - IERC20(ventureToken).balanceOf(address(venture));
+        // Treasury-held venture tokens can never claim, and a standing approval could recirculate them
+        // after the snapshot to over-draw holders. Must precede setLiquidator, which locks out burn.
+        uint256 treasurySupply = IERC20(ventureToken).balanceOf(address(venture));
+        if (treasurySupply != 0) venture.burn(treasurySupply);
+        uint256 claimableSupply = IERC20(ventureToken).totalSupply();
         if (claimableSupply == 0) revert InvalidParams();
 
         venture.setLiquidator(params.liquidator);

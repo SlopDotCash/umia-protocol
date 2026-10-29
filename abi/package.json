@@ -1,6 +1,6 @@
 {
   "name": "@umia/abi",
-  "version": "0.2.1",
+  "version": "0.4.1",
   "description": "Typed ABIs and raw JSON exports for the Umia protocol smart contracts.",
   "license": "MIT",
   "type": "module",

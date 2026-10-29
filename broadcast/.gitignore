@@ -1,4 +1,0 @@
-# Hide deployment artifacts
-Deploy.s.sol/
-DeployTestnetToken.s.sol/
-DeployOracleUpgrade.s.sol/

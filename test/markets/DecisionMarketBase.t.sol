@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {FixedPoint96} from "@uniswap/v4-core/src/libraries/FixedPoint96.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {PosmTestSetup} from "@uniswap/v4-periphery/test/shared/PosmTestSetup.sol";
 import {StateView} from "@uniswap/v4-periphery/src/lens/StateView.sol";
 import {Test, console} from "forge-std/Test.sol";
@@ -168,8 +169,8 @@ abstract contract DecisionMarketBase is Test, PosmTestSetup {
         hub.setLbpStrategyFactory(address(lbpFactory));
         hub.setCcaFactory(address(ccaFactory));
         hub.setDefaultGovernanceExecutor(address(new GovernanceExecutor(address(hub))));
-        // Disable the execution delay by default; the delay behavior is covered explicitly.
-        hub.setDecisionMarketExecutionDelay(0);
+        // Shortest allowed execution delay by default; the delay behavior is covered explicitly.
+        hub.setDecisionMarketExecutionDelay(hub.MIN_EXECUTION_DELAY());
         vm.stopPrank();
 
         vm.label(address(hub), "HUB");
@@ -588,6 +589,13 @@ abstract contract DecisionMarketBase is Test, PosmTestSetup {
 
     function _accruedFeeMoney(uint256 proposalId) internal view returns (uint256 feeMoney) {
         (, feeMoney) = mm.proposalFeeState(proposalId);
+    }
+
+    /// @dev Proposal `a`'s price over proposal `b`'s, in 1e18.
+    function _priceRatio(uint256 a, uint256 b) internal view returns (uint256) {
+        (uint256 a0, uint256 a1) = mm.cpmmStates(a);
+        (uint256 b0, uint256 b1) = mm.cpmmStates(b);
+        return FullMath.mulDiv(a1 * b0, 1e18, a0 * b1);
     }
 
     /// @dev Verify the solvency invariant holds. Mirrors the contract's per-proposal conservation:

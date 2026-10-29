@@ -58,6 +58,19 @@
   },
   {
     "type": "function",
+    "name": "MIN_EXECUTION_DELAY",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MIN_INITIAL_SUPPLY",
     "inputs": [],
     "outputs": [
@@ -78,6 +91,19 @@
         "name": "",
         "type": "string",
         "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "activeLiquidityKeeper",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -416,6 +442,32 @@
   },
   {
     "type": "function",
+    "name": "launchActiveHalfWidthTicks",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "int24",
+        "internalType": "int24"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "launchAnchorBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "lbpStrategyFactory",
     "inputs": [],
     "outputs": [
@@ -439,6 +491,24 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "migrateSpotLiquidityVault",
+    "inputs": [
+      {
+        "name": "venture",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "newVault",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -525,6 +595,19 @@
         "name": "_marketId",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setActiveLiquidityKeeper",
+    "inputs": [
+      {
+        "name": "_keeper",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -641,6 +724,32 @@
   },
   {
     "type": "function",
+    "name": "setLaunchActiveHalfWidthTicks",
+    "inputs": [
+      {
+        "name": "halfWidth",
+        "type": "int24",
+        "internalType": "int24"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setLaunchAnchorBps",
+    "inputs": [
+      {
+        "name": "bps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setLbpStrategyFactory",
     "inputs": [
       {
@@ -684,6 +793,19 @@
     "inputs": [
       {
         "name": "recipient",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setSpotMigrator",
+    "inputs": [
+      {
+        "name": "_migrator",
         "type": "address",
         "internalType": "address"
       }
@@ -807,6 +929,24 @@
   },
   {
     "type": "function",
+    "name": "setVentureVestingAuthority",
+    "inputs": [
+      {
+        "name": "ventureId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "authority",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setVestingAdmin",
     "inputs": [
       {
@@ -843,6 +983,19 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "spotMigrator",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1079,6 +1232,25 @@
   },
   {
     "type": "function",
+    "name": "ventureVestingAuthority",
+    "inputs": [
+      {
+        "name": "ventureId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "vestingAdmin",
     "inputs": [],
     "outputs": [
@@ -1115,6 +1287,25 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "ActiveLiquidityKeeperUpdated",
+    "inputs": [
+      {
+        "name": "oldKeeper",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newKeeper",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -1309,6 +1500,44 @@
   },
   {
     "type": "event",
+    "name": "LaunchActiveHalfWidthTicksUpdated",
+    "inputs": [
+      {
+        "name": "oldHalfWidth",
+        "type": "int24",
+        "indexed": false,
+        "internalType": "int24"
+      },
+      {
+        "name": "newHalfWidth",
+        "type": "int24",
+        "indexed": false,
+        "internalType": "int24"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LaunchAnchorBpsUpdated",
+    "inputs": [
+      {
+        "name": "oldBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "newBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "LbpStrategyFactoryUpdated",
     "inputs": [
       {
@@ -1417,6 +1646,31 @@
   },
   {
     "type": "event",
+    "name": "SpotLiquidityVaultMigrated",
+    "inputs": [
+      {
+        "name": "venture",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "oldVault",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newVault",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "SpotLiquidityVaultRegistered",
     "inputs": [
       {
@@ -1427,6 +1681,25 @@
       },
       {
         "name": "vault",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SpotMigratorUpdated",
+    "inputs": [
+      {
+        "name": "oldMigrator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newMigrator",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -1601,6 +1874,25 @@
   },
   {
     "type": "event",
+    "name": "VentureVestingAuthoritySet",
+    "inputs": [
+      {
+        "name": "ventureId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "authority",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "VestingAdminUpdated",
     "inputs": [
       {
@@ -1730,12 +2022,27 @@
   },
   {
     "type": "error",
+    "name": "InvalidLaunchActiveHalfWidth",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidPoolTickSpacing",
     "inputs": []
   },
   {
     "type": "error",
+    "name": "InvalidSpotLiquidityVault",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidToken",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidVestingAuthority",
     "inputs": []
   },
   {
@@ -1756,6 +2063,11 @@
   {
     "type": "error",
     "name": "NotInitializing",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotSpotMigrator",
     "inputs": []
   },
   {
@@ -1804,6 +2116,16 @@
   {
     "type": "error",
     "name": "SpotLiquidityVaultAlreadyRegistered",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SpotLiquidityVaultNotRegistered",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SpotLiquidityVaultStillFunded",
     "inputs": []
   },
   {

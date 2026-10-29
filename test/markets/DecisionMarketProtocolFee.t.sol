@@ -346,6 +346,9 @@ contract DecisionMarketProtocolFeeTest is DecisionMarketBase {
         assertEq(hub.spotSwapFeeBps(), cap);
         vm.expectRevert();
         hub.setSpotSwapFeeBps(cap + 1);
+        // Zero would leave V2 pools without an active-liquidity band.
+        vm.expectRevert(IUmiaHub.InvalidBps.selector);
+        hub.setSpotSwapFeeBps(0);
 
         // Protocol cuts are capped at 100% of the fee (MAX_BPS = 10000).
         hub.setDecisionProtocolFeeCutBps(10_000);
