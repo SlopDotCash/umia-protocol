@@ -21,7 +21,8 @@ Executes typed governance plans for a venture after market settlement.
 
 - Validates plan via `GovernancePayloadValidator.decodeAndValidatePayload`.
 - Iterates actions in order, executing each via `GovernanceActions.executeActionV1`.
-- `LIQUIDATE_TREASURY` must be the final action (enforced in `GovernancePayloadValidator.validatePlanV1`).
+- `LIQUIDATE_TREASURY` must be the final action and a plan holds at most 20 actions (both enforced in `GovernancePayloadValidator.validatePlanV1`).
+- `validatePayload(executionPayload)` (pure) exposes the same validation; `MarketCreationLib` staticcalls it at `createMarket`, so an invalid proposal payload reverts market creation.
 
 ## Events
 

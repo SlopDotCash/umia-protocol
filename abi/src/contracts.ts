@@ -7,6 +7,7 @@ export const CONTRACTS = [
   "VentureToken",
   "MockERC20",
   "UmiaLBP",
+  "UmiaLBPFactory",
   "SpotLiquidityVault",
   "UmiaHook",
   "CCAExitHelper",
@@ -15,9 +16,15 @@ export const CONTRACTS = [
   "AuctionStateLens",
   "CCALens",
   "GovernanceExecutor",
+  "UmiaHookV2",
+  "SpotLiquidityVaultV2",
+  "ActiveLiquidityManager",
+  "SpotMigrator",
+  "UmiaLBPV2",
+  "UmiaLBPFactoryV2",
 ] as const;
 
-// Interfaces with no in-scope implementer — SDK consumers (e.g. anyone
+// Interfaces with no in-scope implementer: SDK consumers (e.g. anyone
 // writing a liquidator) need these ABIs to decode errors their own
 // contracts emit. Interfaces that DO have an implementer in CONTRACTS
 // don't need to be listed here; their errors propagate into the

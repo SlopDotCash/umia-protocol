@@ -97,10 +97,16 @@
       "type": "t_mapping(t_address,t_uint256)"
     },
     {
-      "label": "__gap",
+      "label": "activeManager",
       "slot": 16,
       "offset": 0,
-      "type": "t_array(t_uint256)50_storage"
+      "type": "t_mapping(t_uint256,t_address)"
+    },
+    {
+      "label": "__gap",
+      "slot": 17,
+      "offset": 0,
+      "type": "t_array(t_uint256)49_storage"
     }
   ],
   "types": {
@@ -108,9 +114,9 @@
       "label": "address",
       "numberOfBytes": 20
     },
-    "t_array(t_uint256)50_storage": {
-      "label": "uint256[50]",
-      "numberOfBytes": 1600,
+    "t_array(t_uint256)49_storage": {
+      "label": "uint256[49]",
+      "numberOfBytes": 1568,
       "base": "t_uint256"
     },
     "t_array(t_uint256)dyn_storage": {
@@ -151,6 +157,12 @@
       "numberOfBytes": 32,
       "key": "t_address",
       "value": "t_uint256"
+    },
+    "t_mapping(t_uint256,t_address)": {
+      "label": "mapping(uint256 => address)",
+      "numberOfBytes": 32,
+      "key": "t_uint256",
+      "value": "t_address"
     },
     "t_mapping(t_uint256,t_mapping(t_address,t_bool))": {
       "label": "mapping(uint256 => mapping(address => bool))",

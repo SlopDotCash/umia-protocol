@@ -12,6 +12,19 @@
   },
   {
     "type": "function",
+    "name": "DOUBLING_TICKS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "HUB",
     "inputs": [],
     "outputs": [
@@ -19,6 +32,19 @@
         "name": "",
         "type": "address",
         "internalType": "contract IUmiaHub"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MIN_TICK_SLEW_PER_SECOND",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint24",
+        "internalType": "uint24"
       }
     ],
     "stateMutability": "view"
@@ -48,6 +74,35 @@
         "name": "twapX112",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "calculateTWAPTick",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "reserve0",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "reserve1",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "meanTick",
+        "type": "int24",
+        "internalType": "int24"
       }
     ],
     "stateMutability": "view"
@@ -102,14 +157,19 @@
     ],
     "outputs": [
       {
-        "name": "price0CumulativeLast",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "tickCumulative",
+        "type": "int64",
+        "internalType": "int64"
       },
       {
-        "name": "lastPrice0X112",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "lastTick",
+        "type": "int24",
+        "internalType": "int24"
+      },
+      {
+        "name": "tickAreaRemainder",
+        "type": "uint16",
+        "internalType": "uint16"
       },
       {
         "name": "tradingStart",
@@ -127,12 +187,36 @@
         "internalType": "uint32"
       },
       {
+        "name": "slewPerSecond",
+        "type": "uint24",
+        "internalType": "uint24"
+      },
+      {
         "name": "initialized",
         "type": "bool",
         "internalType": "bool"
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "slewFor",
+    "inputs": [
+      {
+        "name": "duration",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint24",
+        "internalType": "uint24"
+      }
+    ],
+    "stateMutability": "pure"
   },
   {
     "type": "function",

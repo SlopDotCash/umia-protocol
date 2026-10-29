@@ -58,6 +58,7 @@ contract GovernanceIntegrationTest is DecisionMarketBase {
         IUmiaMarketCore.WinningProposal memory winning = mm.winningProposalByMarketId(_marketId);
         assertEq(winning.proposalId, proposalId);
 
+        vm.warp(block.timestamp + 1 hours);
         mm.executeWinningProposal(_marketId);
 
         address ventureTokenAddr = Venture(venture).token();
@@ -105,6 +106,7 @@ contract GovernanceIntegrationTest is DecisionMarketBase {
         hub.setDefaultGovernanceExecutor(address(0));
 
         vm.expectRevert(IUmiaMarketCore.GovernanceExecutorNotSet.selector);
+        vm.warp(block.timestamp + 1 hours);
         mm.executeWinningProposal(_marketId);
     }
 
@@ -149,6 +151,7 @@ contract GovernanceIntegrationTest is DecisionMarketBase {
         hub.setDefaultGovernanceExecutor(makeAddr("executor-eoa"));
 
         vm.expectRevert(IUmiaMarketCore.GovernanceExecutorNotSet.selector);
+        vm.warp(block.timestamp + 1 hours);
         mm.executeWinningProposal(_marketId);
 
         assertFalse(mm.marketExecuted(_marketId));
@@ -185,6 +188,7 @@ contract GovernanceIntegrationTest is DecisionMarketBase {
         vm.prank(umiaAdmin);
         hub.setDefaultGovernanceExecutor(address(0));
 
+        vm.warp(block.timestamp + 1 hours);
         mm.executeWinningProposal(_marketId);
 
         assertTrue(mm.marketExecuted(_marketId));

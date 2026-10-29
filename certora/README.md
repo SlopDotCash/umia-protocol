@@ -19,22 +19,27 @@ certora/
 
 ## Prerequisites
 
-1. Set your prover key: `export CERTORAKEY=<your-key>`
-2. Have `solc` (0.8.26) installed and available in PATH
+1. Install the prover CLI (`pip install certora-cli`) and set your key: `export CERTORAKEY=<your-key>`
+2. Have `solc` 0.8.26 installed and available in `PATH`
 
 ## Running
 
+From the project root:
+
 ```bash
-just certora CPMM            # CPMM math invariants
-just certora MarketCore    # Solvency, settlement, claims
-just certora StateMachine     # Market lifecycle transitions
+certoraRun certora/conf/CPMM.conf            # CPMM math invariants
+certoraRun certora/conf/MarketCore.conf      # Solvency, settlement, claims
+certoraRun certora/conf/StateMachine.conf    # Market lifecycle transitions
 ```
 
-Results appear on the [Certora Prover dashboard](https://prover.certora.com/).
+Each conf compiles its harness with `via-ir`, bounds loops (`loop_iter`), and names the spec to
+verify. Results appear on the [Certora Prover dashboard](https://prover.certora.com/).
 
 ## Specs
 
-### `CPMM.spec` — AMM math (10 rules, 1 invariant)
+32 rules and 2 invariants in total.
+
+### `CPMM.spec`: AMM math (11 rules, 1 invariant)
 
 Target: `CPMMHarness.sol` wrapping `src/libraries/CPMM.sol`
 
@@ -53,7 +58,7 @@ Target: `CPMMHarness.sol` wrapping `src/libraries/CPMM.sol`
 | `addLiquidityIncreasesReserves`            | Both reserves non-decreasing after liquidity addition             |
 | **Invariant:** `reservesPositiveAfterInit` | Once both reserves are positive, they stay positive               |
 
-### `MarketCore.spec` — Solvency & settlement (11 rules, 1 ghost invariant)
+### `MarketCore.spec`: solvency and settlement (11 rules, 1 ghost invariant)
 
 Target: `MarketCoreHarness.sol` extending `src/core/UmiaMarketCore.sol`
 
@@ -65,7 +70,7 @@ Target: `MarketCoreHarness.sol` extending `src/core/UmiaMarketCore.sol`
 | `splitExactSupplyChange`                          | Split increases supply by exact amount for market proposals, zero for others |
 | `noDoubleClaim`                                   | Second claim reverts                                                         |
 | `claimBurnsVirtualTokens`                         | User's virtual token balance is zero after claim                             |
-| `claimSetsFlag`                                   | `hasClaimed` is true after successful claim                                  |
+| `claimSetsFlag`                                   | The claimed flag is true after a successful claim                            |
 | `virtualSupplyConservationOnSwap`                 | CPMM reserves + user supply constant through swaps                           |
 | `totalSupplyTracksOnSplit`                        | `totalSupply` non-decreasing after split                                     |
 | `settleOnlyOnce`                                  | Settling an already-settled market reverts                                   |
@@ -74,7 +79,7 @@ Target: `MarketCoreHarness.sol` extending `src/core/UmiaMarketCore.sol`
 
 The ghost variable `sumOfBalances` is maintained by an `Sstore` hook on `balanceOf` and independently verifies that the contract's `totalSupply` counter matches actual token holdings.
 
-### `StateMachine.spec` — Market lifecycle (10 rules)
+### `StateMachine.spec`: market lifecycle (10 rules)
 
 Target: `MarketCoreHarness.sol`
 
@@ -86,25 +91,55 @@ Target: `MarketCoreHarness.sol`
 | `claimOnlyWhenSettled`     | `claimSettlement` reverts when market is not settled           |
 | `marketCounterMonotonic`   | Market counter never decreases (parametric over all functions) |
 | `proposalCounterMonotonic` | Proposal counter never decreases                               |
-| `hasClaimedMonotonic`      | `hasClaimed` never goes from true to false                     |
+| `hasClaimedMonotonic`      | The claimed flag never goes from true to false                 |
 | `marketExecutedMonotonic`  | `marketExecuted` never goes from true to false                 |
 | `settlementMonotonic`      | Winning proposal ID never changes once set                     |
 | `addLiquidityOnlyWhenOpen` | `addLiquidity` reverts when market is not OPEN                 |
 
 ## Assumptions (NONDET summaries)
 
-External calls are summarized as `NONDET` — the prover assumes they succeed and returns an arbitrary value. This means these specs verify **internal accounting invariants**, not integration correctness.
+External calls are summarized as `NONDET`: the prover assumes they succeed and return an arbitrary value. These specs therefore verify **internal accounting invariants**, not integration correctness.
 
 | Summary                                                                   | Rationale                                                                                                      |
 | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `safeTransfer` / `safeTransferFrom`                                       | Umia uses standard ERC20 tokens vetted at venture creation. Fee-on-transfer and rebasing tokens are out of scope. |
-| `update`, `initialize`, `calculateTWAP`                                   | TWAP oracle interactions. Specs focus on accounting, not oracle correctness.                                   |
-| `swapRouter`, `conditionalMarketOracle`                                                | Hub registry lookups. Access control is not verified (the prover can pick any address).                        |
-| `ventureById`, `ventureTokenById`, `ventureMoneyTokenById`                         | Hub registry. Token addresses are arbitrary in the prover.                                                     |
-| `winningMarketThresholdBps`, `circuitBreakerActive`, `governanceExecutor` | Protocol parameters. Specs verify accounting holds for any parameter values.                                   |
+| `update`, `initialize`, `calculateTWAP`                                   | `ConditionalMarketOracle` interactions. Specs focus on accounting, not oracle correctness.                     |
+| `conditionalMarketOracle`                                                 | Hub registry lookup. Access control is not verified (the prover can pick any address).                         |
+| `ventureById`, `ventureTokenById`, `ventureMoneyTokenById`                | Hub registry. Token addresses are arbitrary in the prover.                                                     |
+| `winningMarketThresholdBps`, `decisionMarketCircuitBreakerActive`, `governanceExecutor` | Protocol parameters. Specs verify accounting holds for any parameter values.                        |
 
 ## Coverage gaps
 
-- **`removeLiquidity` / `_reAddLiquidity`**: Uniswap V4 integration not modeled. If the re-add returns less liquidity, accounting could diverge.
-- **Ghost scope**: Only `totalSupply == Σ balanceOf` is implemented. Ghosts for `userVirtualSupply == Σ balanceOf` (per-proposal) and full conservation (`reserve + Σ user balances == constant`) are deferred to avoid prover performance degradation.
-- **Access control**: `routerSwapExactIn`/`routerSwapExactOut` require `msg.sender == HUB.swapRouter()`, but since `swapRouter()` is NONDET, this check is trivially satisfied.
+- **Vault liquidity pull and return**: `MarketCreationLib` seeds a market with
+  `vault.pullForDecisionMarket(marketId, BOOTSTRAP_PULL_BPS)` and `SettlementLib` hands the
+  remainder back with `vault.returnFromDecisionMarket(marketId, ventureAmount, moneyAmount)`. The
+  vault and its Uniswap V4 position are not modelled, so a return that lands less than expected is
+  outside the specs.
+- **Ghost scope**: only `totalSupply == Σ balanceOf` is implemented. Ghosts for
+  `userVirtualSupply == Σ balanceOf` (per proposal) and full conservation
+  (`reserve + Σ user balances == constant`) are deferred to avoid prover performance degradation.
+- **Swap access control**: `swapExactIn` / `swapExactOut` (and their permit variants) are open to
+  any caller, so there is no sender check to verify. The only sender-specific swap rule, the
+  `activeManager` fee exemption below, is not covered.
+
+## Known gaps
+
+Not covered by any spec:
+
+- `basketSwapExactOut`, the per-proposal basket trade used for arbitrage against spot.
+- The `activeManager` fee exemption: `basketSwapExactOut` charges no fee when
+  `msg.sender == activeManager[marketId]`, the manager snapshotted from the venture's V2 vault at
+  market creation.
+- The V2 spot liquidity paths: `SpotLiquidityVaultV2`, `ActiveLiquidityManager` and `SpotMigrator`
+  have no harness or spec.
+
+The harness and specs predate the current `UmiaMarketCore` storage layout.
+`certora/harness/MarketCoreHarness.sol` indexes `cpmmStates[...]`, `hasClaimed[...]`,
+`userVirtualVentureSupply[...]`, `realVentureBalance[...]`, `marketExecuted[...]` and
+`liquidityRemovalInfo[...]` as public storage, while the core now keeps that state in `_pools`,
+`_hasClaimed` and `_settle` behind view functions (`cpmmStates(uint256)`,
+`userVirtualVentureSupply(uint256)`, `marketExecuted(uint256)`). The spec method blocks also
+declare `routerSwapExactIn` / `routerSwapExactOut` and summarise `swapRouter()` and
+`circuitBreakerActive(uint256)`, none of which exist any more (there is no router, and the Hub
+read is `decisionMarketCircuitBreakerActive(uint256)`). The harness and the method blocks must be
+updated to the current MarketCore storage and surface before the suite runs again.

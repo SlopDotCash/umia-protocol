@@ -225,5 +225,121 @@ library Claims {
         }
         return out;
     }
-}
 
+    /// @notice Accepts a nonempty JSON object whose values are all nonblank strings.
+    /// @dev Mirrors the extracted-parameter shape checked by the API before an identity is stored.
+    function hasNonEmptyStringValues(bytes memory object) internal pure returns (bool) {
+        uint256 length = object.length;
+        if (length < 2 || object[0] != "{" || object[length - 1] != "}") return false;
+
+        uint256 cursor = 1;
+        while (cursor < length) {
+            cursor = _skipJsonWhitespace(object, cursor);
+            if (cursor >= length - 1 || object[cursor] != '"') return false;
+            (cursor,) = _scanJsonString(object, cursor);
+            if (cursor == 0) return false;
+
+            cursor = _skipJsonWhitespace(object, cursor);
+            if (cursor >= length - 1 || object[cursor] != ":") return false;
+            cursor = _skipJsonWhitespace(object, cursor + 1);
+            if (cursor >= length - 1 || object[cursor] != '"') return false;
+            bool hasValue;
+            (cursor, hasValue) = _scanJsonString(object, cursor);
+            if (cursor == 0 || !hasValue) return false;
+
+            cursor = _skipJsonWhitespace(object, cursor);
+            if (cursor == length - 1) return true;
+            if (cursor >= length - 1 || object[cursor] != ",") return false;
+            ++cursor;
+        }
+        return false;
+    }
+
+    function _skipJsonWhitespace(bytes memory data, uint256 cursor) private pure returns (uint256) {
+        while (cursor < data.length && _isJsonWhitespace(uint8(data[cursor]))) ++cursor;
+        return cursor;
+    }
+
+    function _isJsonWhitespace(uint256 codepoint) private pure returns (bool) {
+        return codepoint == 0x20 || (codepoint >= 0x09 && codepoint <= 0x0d);
+    }
+
+    function _isTrimWhitespace(uint256 codepoint) private pure returns (bool) {
+        return _isJsonWhitespace(codepoint) || codepoint == 0xa0 || codepoint == 0x1680
+            || (codepoint >= 0x2000 && codepoint <= 0x200a) || codepoint == 0x2028 || codepoint == 0x2029
+            || codepoint == 0x202f || codepoint == 0x205f || codepoint == 0x3000 || codepoint == 0xfeff;
+    }
+
+    /// @dev Returns cursor zero for malformed strings. Tracks content after JavaScript-style trim.
+    function _scanJsonString(bytes memory data, uint256 cursor) private pure returns (uint256, bool) {
+        bool hasContent;
+        ++cursor;
+        while (cursor < data.length) {
+            uint8 ch = uint8(data[cursor]);
+            if (ch == 0x22) return (cursor + 1, hasContent);
+            if (ch == 0x5c) {
+                if (++cursor >= data.length) return (0, false);
+                ch = uint8(data[cursor]);
+                if (ch == 0x75) {
+                    if (cursor + 4 >= data.length) return (0, false);
+                    uint256 escapedCodepoint;
+                    for (uint256 j = 1; j <= 4; ++j) {
+                        uint256 digit = _hexDigit(uint8(data[cursor + j]));
+                        if (digit > 15) return (0, false);
+                        escapedCodepoint = (escapedCodepoint << 4) | digit;
+                    }
+                    if (!_isTrimWhitespace(escapedCodepoint)) hasContent = true;
+                    cursor += 5;
+                    continue;
+                }
+                if (ch == 0x22 || ch == 0x5c || ch == 0x2f || ch == 0x62) hasContent = true;
+                else if (ch != 0x66 && ch != 0x6e && ch != 0x72 && ch != 0x74) return (0, false);
+                ++cursor;
+                continue;
+            }
+            if (ch < 0x20) return (0, false);
+            uint256 codepoint;
+            (codepoint, cursor) = _decodeUtf8(data, cursor);
+            if (cursor == 0) return (0, false);
+            if (!_isTrimWhitespace(codepoint)) hasContent = true;
+        }
+        return (0, false);
+    }
+
+    function _hexDigit(uint8 ch) private pure returns (uint256) {
+        if (ch >= 0x30 && ch <= 0x39) return ch - 0x30;
+        if (ch >= 0x41 && ch <= 0x46) return ch - 0x41 + 10;
+        if (ch >= 0x61 && ch <= 0x66) return ch - 0x61 + 10;
+        return 16;
+    }
+
+    function _decodeUtf8(bytes memory data, uint256 cursor) private pure returns (uint256, uint256) {
+        uint8 first = uint8(data[cursor]);
+        if (first < 0x80) return (first, cursor + 1);
+        uint256 count;
+        uint256 codepoint;
+        if (first >= 0xc2 && first <= 0xdf) {
+            count = 2;
+            codepoint = first & 0x1f;
+        } else if (first >= 0xe0 && first <= 0xef) {
+            count = 3;
+            codepoint = first & 0x0f;
+        } else if (first >= 0xf0 && first <= 0xf4) {
+            count = 4;
+            codepoint = first & 0x07;
+        } else {
+            return (0, 0);
+        }
+        if (cursor + count > data.length) return (0, 0);
+        for (uint256 j = 1; j < count; ++j) {
+            uint8 next = uint8(data[cursor + j]);
+            if (next < 0x80 || next > 0xbf) return (0, 0);
+            codepoint = (codepoint << 6) | (next & 0x3f);
+        }
+        if (
+            (count == 3 && codepoint < 0x800) || (count == 4 && codepoint < 0x10000)
+                || (codepoint >= 0xd800 && codepoint <= 0xdfff) || codepoint > 0x10ffff
+        ) return (0, 0);
+        return (codepoint, cursor + count);
+    }
+}

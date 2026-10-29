@@ -6,23 +6,23 @@ This document specifies the upgrade mechanisms for Umia Protocol smart contracts
 
 ```
 ┌─────────────┐      ┌─────────────┐      ┌─────────────────────┐
-│   UmiaHub   │─────▶│    Venture     │─────▶│ Uniswap V4 Position │
-│  (registry) │      │ (treasury)  │      │   (LP NFT owner)    │
+│   UmiaHub   │─────▶│   Venture   │─────▶│ SpotLiquidityVault  │
+│  (registry) │      │ (treasury)  │      │ (spot LP position)  │
 └─────────────┘      └─────────────┘      └─────────────────────┘
-       │                    │
-       │                    │ approves operator
-       ▼                    ▼
-┌─────────────────────────────────────────┐
-│         UmiaMarketCore               │
-│  (approved to modify LP positions)      │
-└─────────────────────────────────────────┘
+       │                                           │
+       │                                           │ pulls / returns liquidity
+       ▼                                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                    UmiaMarketCore                       │
+│  (borrows vault liquidity to seed decision markets)     │
+└─────────────────────────────────────────────────────────┘
 ```
 
 | Contract          | Description                                                            |
 | ----------------- | ---------------------------------------------------------------------- |
 | UmiaHub           | Central registry; deploys ventures and stores protocol contract addresses |
 | Venture              | Treasury contract; holds venture assets under governance control       |
-| UmiaMarketCore | Operates on LP positions to create and settle decision markets         |
+| UmiaMarketCore | Pulls spot vault liquidity to create decision markets and returns it at settlement |
 
 ## Registry Pattern
 
@@ -34,6 +34,10 @@ Registry setters:
 - `setConditionalMarketOracle(address)`
 - `setLbpStrategyFactory(address)`
 - `setVentureBeacon(address)`
+- `setUmiaMarketStake(address)`
+- `setCcaFactory(address)`
+- `setSpotMigrator(address)`
+- `setActiveLiquidityKeeper(address)`
 
 Dependent contracts resolve references dynamically:
 
@@ -51,6 +55,9 @@ IGovernanceExecutor(HUB.governanceExecutor(venture)).executeProposal(...);
 | UmiaHub                 | Medium         | UUPS Proxy       | venture registry requires state preservation           |
 | GovernanceExecutor      | Stateless      | Registry Swap    | `hub.setDefaultGovernanceExecutor()`                |
 | ConditionalMarketOracle | Per-proposal   | Registry Swap    | `hub.setConditionalMarketOracle()`                  |
+| SpotMigrator            | Per-venture prep | Registry Swap  | `hub.setSpotMigrator()`                             |
+| UmiaLBPFactory / V2     | Immutables     | Registry Swap    | `hub.setLbpStrategyFactory()`, paired with a new hook |
+| UmiaHook / UmiaHookV2   | Pool registry  | Non-upgradeable  | CreateX singleton; new bytecode means a new address |
 | VentureToken               | ERC20 balances | Non-upgradeable  | Token identity tied to address                      |
 | UmiaLBP                 | Lifecycle      | Non-upgradeable  | Terminates after migration                          |
 
@@ -61,17 +68,20 @@ IGovernanceExecutor(HUB.governanceExecutor(venture)).executeProposal(...);
 ### UmiaMarketCore
 
 State that requires proxy preservation:
-- ERC6909 virtual token balances per user per proposal
-- Active market state (`_marketById`, `_proposalById`)
-- CPMM reserves (`cpmmStates`)
-- Settlement state (`hasClaimed`, `liquidityRemovalInfo`)
-- Market stake deposits (`marketStakes`)
+- ERC6909 virtual token balances and supplies (`balanceOf`, `totalSupply`)
+- Active market state (`_markets`, `_proposals`, `activeMarketByVenture`, `proposalToMarket`)
+- CPMM reserves and LP shares (`_pools`)
+- Settlement state (`_settle`, `_hasClaimed`)
+- EIP-712 nonces (`marketCreationNonces`, `swapNonces`)
+- Per-market fee-exempt ALM (`activeManager`)
 
 ```solidity
-mapping(uint256 => Market) private _marketById;
-mapping(uint256 proposalId => CPMM.State) public cpmmStates;
-mapping(uint256 tokenId => uint256) public totalSupply;
+mapping(uint256 proposalId => Pool) internal _pools;
+mapping(uint256 marketId => MarketData) internal _markets;
+mapping(uint256 id => uint256) public totalSupply;
 ```
+
+Market stake deposits live in the separate `UmiaMarketStake` contract, not in the core.
 
 Registry swap is not viable; all active markets and user balances would be invalidated.
 
@@ -79,7 +89,7 @@ Registry swap is not viable; all active markets and user balances would be inval
 A new implementation deploys fresh copies; `script/UpgradeMarketCore.s.sol` reads the linked
 addresses out of the bytecode so they can be recorded and verified.
 
-Upgrade process: see [Runbook](#runbook) (`just forge-upgrade market-core <env> <chain>`).
+Upgrade process: see [Upgrade flow](#upgrade-flow).
 
 File: `src/core/UmiaMarketCore.sol`
 
@@ -89,7 +99,7 @@ State that requires proxy preservation:
 - `ventureCount`, `_ventureById` (venture registry)
 - `approvedMoneyTokens` (token whitelist)
 
-Upgrade process: see [Runbook](#runbook) (`just forge-upgrade hub <env> <chain>`).
+Upgrade process: see [Upgrade flow](#upgrade-flow).
 
 File: `src/core/UmiaHub.sol`
 
@@ -122,13 +132,13 @@ VentureProxy is a custom proxy (`src/core/VentureProxy.sol`) that checks the ERC
 ```solidity
 function _implementation() internal view override returns (address impl) {
     impl = ERC1967Utils.getImplementation();
-    if (impl == address(0)) {
+    if (impl == address(0) || impl.code.length == 0) {
         impl = IBeacon(_beacon).implementation();
     }
 }
 ```
 
-OZ does not provide a hybrid beacon/ERC1967 proxy — VentureProxy is a custom 29-line contract composed from OZ primitives (`Proxy`, `ERC1967Utils`, `IBeacon`). Venture overrides `_checkProxy()` to only verify delegatecall context, since the default OZ check (`getImplementation() == __self`) fails for beacon-mode Ventures where the implementation slot is `address(0)`.
+OZ does not provide a hybrid beacon/ERC1967 proxy. VentureProxy is a custom 35-line contract composed from OZ primitives (`Proxy`, `ERC1967Utils`, `IBeacon`). Venture overrides `_checkProxy()` to only verify delegatecall context, since the default OZ check (`getImplementation() == __self`) fails for beacon-mode Ventures where the implementation slot is `address(0)`.
 
 ### Upgrade Paths
 
@@ -196,12 +206,27 @@ These contracts are stateless or have ephemeral state, enabling upgrade via regi
 ### GovernanceExecutor
 
 ```solidity
-UmiaHub public immutable HUB;
+IUmiaHub public immutable HUB;
 ```
 
-Upgrade:
-1. Deploy `GovernanceExecutorV2(hubAddress)`
-2. Call `hub.setDefaultGovernanceExecutor(v2Address)`
+The executor is not upgradeable, so a new action type ships as a new executor:
+
+1. Deploy `new GovernanceExecutor(hub)`.
+2. Hub owner: `hub.setDefaultGovernanceExecutor(newExecutor)`.
+
+`script/SwapGovernanceExecutor.s.sol` does both, with a rehearsal in between: it deploys the
+executor from `DEPLOYER_PRIVATE_KEY`, then simulates the swap in a fork as the hub owner and
+checks that every venture resolves to the new executor, that no venture keeps a per-venture
+override, that every unexecuted proposal payload still validates, and that the old executor can
+no longer execute. With `EXECUTE_UPGRADE=true` and a deployer-owned hub it sends the swap;
+otherwise it prints the calldata the owner must send.
+
+A venture with a per-venture override (`hub.setVentureGovernanceExecutor`) keeps its old executor
+through the swap, and the rehearsal fails while any override is set, even one pointing at the new
+executor. Clear each first with `hub.setVentureGovernanceExecutor(ventureId, address(0))`.
+
+The hub emits an event for every executor it points at, so off-chain consumers discover the new
+executor from the hub alone.
 
 File: `src/core/GovernanceExecutor.sol`
 
@@ -216,14 +241,16 @@ reconstructed after the fact, so a replacement oracle only serves markets create
 
 The `initialize`/`update`/`calculateTWAP` interface is the upgrade seam. `initialize` receives the
 scoring window and the market's snapshotted `winningThresholdBps`, so a replacement implementation
-(e.g. one whose clamp is calibrated to the threshold) needs no new inputs from the core — the swap
+(e.g. one whose filter is calibrated to the threshold) needs no new inputs from the core. The swap
 is a Hub pointer change, with no `UmiaMarketCore` implementation upgrade.
 
 Upgrade:
 1. Wait for all active markets to settle (oracle data required for settlement); the setter's
    `withNoActiveMarkets` guard enforces this
-2. Deploy `ConditionalMarketOracleV2(hubAddress)`
-3. Call `hub.setConditionalMarketOracle(v2Address)`
+2. Deploy the new `ConditionalMarketOracle(hubAddress)` (`script/DeploySpotLiquidityV2.s.sol`
+   deploys the current one alongside the V2 spot stack)
+3. Hub owner: `hub.setConditionalMarketOracle(newOracle)`, in the same batch as the rest of the
+   release (`test/fork/ConditionalOracleSwapBase.t.sol` rehearses it on a Base fork)
 
 Constraint: Cannot swap during active markets due to cumulative price history dependency.
 
@@ -233,12 +260,14 @@ File: `src/periphery/ConditionalMarketOracle.sol`
 
 - `hub.setUmiaMarketCore` is gated by `withNoActiveMarkets`; prefer a UUPS upgrade of the existing
   proxy, which needs no quiet window.
-- `hub.setLbpStrategyFactory` alone breaks new launches: `UmiaHook` is bound to one factory at
-  `initialize` and is CREATE2-canonical, so a new factory means a new hook (salt mining, new pool
-  keys for future ventures). Treat it as a redeploy of the launch stack.
-- Every address change is a release: `contracts.json` is baked into the api, keeper, cron, and
-  indexer images and bundled into the hub, and the indexer config is generated from it with one
-  static address per contract (keep the old address listed so history stays indexed).
+- `hub.setLbpStrategyFactory` alone breaks new launches: `UmiaHook` (and `UmiaHookV2`) is bound to
+  one factory at `initialize` and is CREATE2-canonical, so a new factory means a new hook (salt
+  mining, new pool keys for future ventures). Treat it as a redeploy of the launch stack:
+  `script/DeployOracleUpgrade.s.sol` and `script/DeploySpotLiquidityV2.s.sol` are that redeploy, and
+  both leave the flip to the hub owner, to be sent once off-chain consumers watch the new hook.
+- Every address change is a release for off-chain consumers: anything that indexes or calls the
+  protocol needs the new address. Old hooks keep serving their existing pools, so the old addresses
+  stay relevant next to the new ones.
 
 ---
 
@@ -259,10 +288,10 @@ File: `src/periphery/ConditionalMarketOracle.sol`
 ### Uniswap V4 References
 
 `UmiaHub` holds no Uniswap addresses. The only one baked into the protocol is the
-`PoolManager`, fixed at construction on `UmiaLBPFactory` and at `initialize()` on
-`UmiaHook`; changing it means redeploying both, not a Hub upgrade. The remaining
-addresses (`POSITION_MANAGER`, `PERMIT2`, `STATE_VIEW`) live only in `contracts.json`
-for off-chain consumers.
+`PoolManager`, fixed at construction on `UmiaLBPFactory`, `UmiaLBPFactoryV2` and
+`SpotMigrator`, and at `initialize()` on `UmiaHook` and `UmiaHookV2`; changing it means
+redeploying them, not a Hub upgrade. The protocol stores no other Uniswap address (position
+manager, Permit2, state view, universal router); off-chain tooling resolves those itself.
 
 ---
 
@@ -289,22 +318,27 @@ UmiaMarketCore needs no transfer: its `_authorizeUpgrade` checks `HUB.owner()`.
 Role layout:
 
 ```
-Safe multisig ── PROPOSER_ROLE + CANCELLER_ROLE ──▶ TimelockController ──owns──▶ UmiaHub, beacon
-anyone        ── EXECUTOR_ROLE (open)           ──▶ execute() after minDelay
-timelock      ── DEFAULT_ADMIN_ROLE (self)      ──▶ role/delay changes via scheduled ops
+proposer multisig ── PROPOSER_ROLE + CANCELLER_ROLE ──▶ TimelockController ──owns──▶ UmiaHub, beacon
+anyone            ── EXECUTOR_ROLE (open)           ──▶ execute() after minDelay
+timelock          ── DEFAULT_ADMIN_ROLE (self)      ──▶ role/delay changes via scheduled ops
 ```
 
-Every owner action becomes `schedule()` (from the Safe) → wait `minDelay`
-(default 2 days) → `execute()` (anyone, payload is fixed at schedule time).
-The Safe can `cancel()` a queued operation during the delay. Emergency response
-stays instant through the separate `vetoGuardian` key, which trips decision-market
-circuit breakers without touching the timelock; resets remain owner-gated and
+Every owner action becomes `schedule()` (sent by the proposer) → wait `minDelay` (default 2 days) →
+`execute()` (an authorized executor; anyone only when `EXECUTOR_ROLE` is granted to `address(0)`).
+The payload is fixed at schedule time. The proposer can `cancel()` a queued operation during the
+delay. Emergency response stays instant through the separate `vetoGuardian` key, which trips
+decision-market circuit breakers without touching the timelock; resets remain owner-gated and
 therefore timelocked.
 
-UmiaHub uses single-step `Ownable`, so adoption is irreversible; the script
-asserts the timelock's role configuration before transferring. Devnet keeps the
-deployer-owned hub (seeding needs instant setter access), so the script is
-opt-in and not part of `Deploy.s.sol`.
+Script inputs: `DEPLOYER_PRIVATE_KEY` (the current hub owner), `UMIA_HUB_ADDRESS`,
+`TIMELOCK_PROPOSER`, and optionally `TIMELOCK_MIN_DELAY` (seconds, default 2 days),
+`TIMELOCK_EXECUTOR` (default `address(0)`, open execution), `VENTURE_BEACON_ADDRESS` (also
+transfer the beacon), `TIMELOCK_ALLOW_EOA_PROPOSER` and `TIMELOCK_ALLOW_SHORT_DELAY` (both default
+false).
+
+UmiaHub uses single-step `Ownable`, so adoption is irreversible; the script asserts the timelock's
+role configuration before transferring. The script is opt-in and not part of `Deploy.s.sol`, so a
+fresh deployment starts deployer-owned.
 
 Tests: `test/governance/HubTimelock.t.sol` (governance flow through the timelock) and
 `test/governance/DeployTimelock.t.sol` (adoption script guard rails).
@@ -325,8 +359,11 @@ These parameters are adjustable without contract upgrades:
 
 ```solidity
 hub.setApprovedMoneyToken(address token, bool approved);
-hub.setWinningMarketThresholdBps(uint256 bps);
+hub.setWinningMarketThresholdBps(uint16 bps);
+hub.setDecisionMarketExecutionDelay(uint32 delay);
 hub.setMarketCreationSigner(address signer);
+hub.setVestingAdmin(address admin);
+hub.setVetoGuardian(address guardian);
 ```
 
 ---
@@ -367,19 +404,29 @@ Venture layout history: `allowanceSources` at slot 12 and `allowanceSourceCount`
 reinitializer; every new path is gated on an empty registry. `.storage-layouts/Venture.json` is
 the authority if this line and the contract ever disagree.
 
-Two checks enforce this, both in `services/internal-cli/scripts/storage-layout.ts`:
+UmiaHub layout history: `spotMigrator` at slot 19, `activeLiquidityKeeper` at slot 20,
+`ventureVestingAuthority` at slot 21, `launchAnchorBps` and `launchActiveHalfWidthTicks` packed in
+slot 22, gap shrunk to `uint256[46]` at slot 23. All are owner-set after the upgrade; zero leaves
+migrations disabled, every ALM without a default keeper, and V2 launches reverting
+`LaunchSplitUnset`. `.storage-layouts/UmiaHub.json` is the authority.
 
-| Check | Command | Gate |
-| ----- | ------- | ---- |
-| Drift: current build equals the committed `.storage-layouts/*.json` | `bun services/internal-cli/scripts/storage-layout.ts check` | Every PR (Foundry CI). Intentional changes: `just forge-update-storage-layouts`, review the diff |
-| Compatibility: current build can be upgraded onto the layout at a git ref | `just forge-storage-compat <ref>` | Foundry CI against the latest release tag (with `--allow-renames`, printed as notes); the runbook against the tag live on the target chain |
+UmiaMarketCore layout history: `activeManager` at slot 16 (the fee-exempt basket trader), gap
+shrunk to `uint256[49]` at slot 17. Snapshotted per market at creation, so markets created before
+the upgrade have no exempt trader. Ships in the same owner batch as the Hub upgrade.
+`.storage-layouts/UmiaMarketCore.json` is the authority.
 
-Compatibility fails on any removed, moved, retyped, or renamed variable (`--allow-renames` accepts
-intentional renames), any struct/mapping internals change, a new variable outside the old gap
-and the unused bytes of the final pre-gap slot, or a
-gap that does not shrink by exactly the appended slots (`--allow-gap-growth` downgrades this to a
-note for layouts still awaiting their first deployment). Baselines older than this tooling only have the legacy
-table snapshot, so struct internals are reported as unverified for them.
+Two checks guard the layouts, both built on the snapshots in `.storage-layouts/` (the
+`forge inspect <Contract> storageLayout` output, reduced to label, slot, offset and type):
+
+| Check | Rule |
+| ----- | ---- |
+| Drift | The current build's layout equals the committed snapshot. An intentional change regenerates the snapshot; the diff is the review artifact |
+| Compatibility | The current build can be upgraded onto the layout live on the target chain (the snapshot at that release) |
+
+Compatibility fails on any removed, moved, retyped, or renamed variable, any struct/mapping
+internals change, a new variable outside the old gap and the unused bytes of the final pre-gap
+slot, or a gap that does not shrink by exactly the appended slots. See
+[DEVELOPMENT.md](./DEVELOPMENT.md#4-storage-layout-snapshots).
 
 ---
 
@@ -405,73 +452,93 @@ Reference shapes and tests: `test/mocks/UpgradedImplementations.sol`, `test/prox
 
 ---
 
-## Runbook
+## Upgrade flow
 
-Every upgrade is a cross-stack release with an on-chain step in the middle. The on-chain step is
-the same for all three targets (`hub`, `market-core`, `venture-beacon`): `script/UpgradeBase.s.sol`
-resolves the target from the hub registry of the `contracts.json` entry named by `UMIA_ENV` and
-`UMIA_CHAIN`, and the three `Upgrade*.s.sol` entrypoints only choose which implementation to deploy.
+An upgrade is one owner transaction per target, sent by whoever owns it (an EOA, a multisig, or a
+timelock that the multisig schedules into):
 
-1. deploy the new implementation (the only transaction the deployer key sends by default)
-2. check it is a locked UUPS implementation (`proxiableUUID`, initializers disabled)
-3. rehearse the upgrade in the fork as the live owner and diff protocol state reads before/after
-   (`script/ProtocolState.sol`: hub registry, market core, and the newest ventures and markets)
-4. if `EXECUTE_UPGRADE=true` and the deployer is the owner: send the upgrade;
-   otherwise print the calldata the owner must send (Safe transaction builder, or the
-   `schedule`/`execute` pair plus operation id when the owner is a `TimelockController`)
+| Target | Owner call | Authority |
+| ------ | ---------- | --------- |
+| `UmiaHub` proxy | `hub.upgradeToAndCall(newImpl, data)` | `hub.owner()` |
+| `UmiaMarketCore` proxy | `marketCore.upgradeToAndCall(newImpl, data)` | `hub.owner()` (`_authorizeUpgrade` checks `HUB.owner()`) |
+| Venture beacon | `beacon.upgradeTo(newImpl)` | `beacon.owner()`; no calldata, so a reinitializer is swept per venture afterwards |
 
-### Before
+`data` is empty or the reinitializer call (see [Reinitializers](#reinitializers)).
 
-```bash
-# 1. layout is upgrade-safe against the tag that is live on the target chain
-just forge-storage-compat <live tag>
+`script/UpgradeHub.s.sol`, `script/UpgradeMarketCore.s.sol` and `script/UpgradeVentureBeacon.s.sol`
+share `script/UpgradeBase.s.sol`, which:
 
-# 2. the scripts run end to end on a fork of the live deployment, through execution
-#    (test/proxy/UpgradeRehearsal.t.sol takes over the proxies with a throwaway key)
-just forge-upgrade-rehearsal <env> <chain>             # e.g. testnet base-sepolia
+1. deploys the new implementation from `DEPLOYER_PRIVATE_KEY` (the only transaction it sends by
+   default; leave the key unset and set `DEPLOYER_ADDRESS` for a hardware wallet via forge's
+   `--ledger`/`--trezor`)
+2. checks it is a locked UUPS implementation (`proxiableUUID`, initializers disabled)
+3. rehearses the upgrade in the fork as the live owner and diffs protocol state reads before and
+   after (`script/ProtocolState.sol`: hub registry, market core, and the newest ventures and markets)
+4. with `EXECUTE_UPGRADE=true` and a deployer-owned target, sends the upgrade; otherwise prints the
+   calldata the owner must send (raw calldata for a contract owner, or the `schedule`/`execute`
+   pair plus operation id when the owner is a `TimelockController`)
 
-# 3. contracts.json still matches chain (catches a stale record before you overwrite it)
-just contracts-check-live <env> <chain>
+`UPGRADE_INIT_DATA` carries the optional reinitializer calldata (proxies only). The scripts locate
+the hub through `script/ProtocolState.sol`: set `UMIA_HUB_ADDRESS` to the `UmiaHub` proxy for every
+target (the MarketCore proxy and the Venture beacon are read from the Hub's registry), or provide a `contracts.json` address book one directory above this tree
+(`<env>.<chain>.umia.hub`, selected by `UMIA_ENV` and `UMIA_CHAIN`). Run without
+`--broadcast` for a pure dry run: steps 1 to 3 still execute in the fork.
+
+Before sending anything: the new layout must pass the compatibility check against the snapshot of
+the release live on the target chain, and the full cycle should run on a fork of the live
+deployment through execution (`test/proxy/UpgradeRehearsal.t.sol`, gated on `FORK_RPC_URL`, takes
+over the proxies with a throwaway key).
+
+After the upgrade, read the live implementation back: the ERC1967 implementation slot
+(`0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc`) on each proxy, and
+`beacon.implementation()` on the beacon. Implementation addresses are bookkeeping only; nothing
+reads them at runtime. Off-chain consumers should gate behaviour on the implementation slot, not
+on when the upgrade was expected to land.
+
+### V2 spot liquidity release
+
+`script/DeploySpotLiquidityV2.s.sol` stages the V2 stack on a chain that already runs the
+protocol, wired to the existing hub, and touches nothing on the Hub itself. Inputs, all required:
+`DEPLOYER_PRIVATE_KEY` (must derive to `UMIA_HOOK_DEPLOYER`), `UMIA_HOOK_DEPLOYER`,
+`UMIA_HOOK_V2_SALT` (mined with `HOOK_V2=true` against this commit's bytecode, see
+[NEW_CHAIN_DEPLOYMENT.md](./NEW_CHAIN_DEPLOYMENT.md#mine-the-umiahookv2-salt)), `POOL_MANAGER`,
+`UMIA_HUB_ADDRESS` and `UMIA_HOOK_ADDRESS` (the live V1 hook). It deploys, in order:
+
+1. `UmiaHookV2` via CreateX
+2. `SpotLiquidityV2Code` (vault and ALM creation code)
+3. `UmiaLBPFactoryV2(poolManager, hookV2, hub, code)`
+4. `hookV2.initialize(factoryV2, poolManager, hub)`
+5. `SpotMigrator(hub, poolManager, hookV2, sourceHook, code)`
+6. `ConditionalMarketOracle(hub)`
+
+Hub owner, in this order:
+
+1. `hub.upgradeToAndCall(newHubImpl, "")`, then `marketCore.upgradeToAndCall(newCoreImpl, "")`.
+   Markets created before the MarketCore upgrade get no fee-exempt ALM.
+2. `hub.setConditionalMarketOracle(oracle)` (requires no active markets).
+3. `hub.setDefaultGovernanceExecutor(new GovernanceExecutor(hub))`. The executor shipped with V2
+   empties the ALM on `LIQUIDATE_TREASURY`, so it must be live before any ALM holds capital.
+4. `hub.setSpotMigrator(migrator)`.
+5. `hub.setActiveLiquidityKeeper(keeper)`: the external rebalancer's signing address.
+6. `hub.setLaunchAnchorBps(7500)` and `hub.setLaunchActiveHalfWidthTicks(10980)`: how V2 launches
+   split liquidity between the anchor vault and the ALM, and the ALM's first range (0.33x to 3x at
+   tick spacing 60). Launches revert `LaunchSplitUnset` until both are set.
+7. `hub.setLbpStrategyFactory(factoryV2)`, once off-chain consumers watch the V2 hook. This flips
+   new launches to V2; in-flight LBPs from the old factory keep their hook and graduate onto V1.
+
+Per existing venture: `migrator.prepare(venture)` (permissionless, its own transaction, about 7.2M
+gas), then one decision-market proposal with two `CALL` actions:
+
+```text
+1. CALL oldVault.withdraw(venture's V1 shares, 0, 0, migrator)
+2. CALL migrator.migrate(MigrateParams{anchorBps, activeSlices[]})
 ```
 
-Offchain goes first: ship ABI (`just abi`), indexer handlers, and API/hub code that tolerate both
-the old and the new implementation. New events on the indexer mean a blue/green resync, so the
-green stack should be syncing before the upgrade executes. Gate offchain behavior on chain truth
-(the implementation slot), not on deploy order.
+`test/fork/SpotMigrationUmiaFork.t.sol` rehearses the migration on a Base fork. See
+[SpotMigrator](./contracts/SpotMigrator.md).
 
-### Upgrade
+### Rehearsal
 
-```bash
-export DEPLOYER_PRIVATE_KEY=...            # deploys the implementation; need not be the owner
-export UPGRADE_INIT_DATA=0x...             # optional reinitializer calldata (proxies only)
-
-# dry run: deploys + rehearses in a fork, prints the handoff
-just forge-upgrade hub <env> <chain> --rpc-url $RPC_URL
-
-# real run: deploys + verifies the implementation (and, for market-core, its libraries)
-just forge-upgrade hub <env> <chain> --rpc-url $RPC_URL --broadcast --verify --etherscan-api-key $KEY
-```
-
-Then the owner acts on the printed calldata. With an EOA owner that is the deployer,
-`EXECUTE_UPGRADE=true` sends it in the same run. With a Safe, paste the calldata into the
-transaction builder. With a timelock, the Safe schedules, anyone executes after `minDelay`.
-
-### After
-
-```bash
-just contracts-check-live <env> <chain> --write   # records hubImpl / marketCoreImpl / ventureImpl / libraries
-```
-
-Write mode treats refreshed bookkeeping differences as informational; registry mismatches and
-owner expectation failures still fail the command. Older hubs without `vestingAdmin` report
-that getter as not present; RPC failures still fail the check.
-
-Commit `contracts.json`, redeploy the services that bake it into their images (api, keeper, cron,
-indexer) and the hub, and tag the release. The implementation addresses are bookkeeping only;
-nothing reads them at runtime.
-
-### Rehearsal on testnet
-
-Run the full cycle on Base Sepolia before any mainnet upgrade, using the real owner path (Safe,
-not the deployer EOA), so the handoff is exercised end to end. Devnet cannot stand in: it redeploys
-from scratch on every reset and never upgrades anything.
+Run the full cycle on a testnet deployment before any mainnet upgrade, using the real owner path
+(the multisig or timelock, not the deployer EOA), so the handoff is exercised end to end. A
+deployment that redeploys from scratch cannot stand in for this: it never upgrades anything.

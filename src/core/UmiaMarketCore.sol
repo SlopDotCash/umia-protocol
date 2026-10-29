@@ -16,6 +16,7 @@ import {IUmiaHub} from "../interfaces/IUmiaHub.sol";
 import {IUmiaMarketCore} from "../interfaces/IUmiaMarketCore.sol";
 import {IConditionalMarketOracle} from "../interfaces/IConditionalMarketOracle.sol";
 import {IGovernanceExecutor} from "../interfaces/IGovernanceExecutor.sol";
+import {ISpotLiquidityVaultV2} from "../interfaces/ISpotLiquidityVaultV2.sol";
 import {MarketData, ProposalData, Pool, SettleAcct} from "../libraries/MarketCoreTypes.sol";
 import {LedgerLib} from "../libraries/LedgerLib.sol";
 import {MarketCreationLib} from "../libraries/MarketCreationLib.sol";
@@ -29,7 +30,8 @@ import {SettlementLib} from "../libraries/SettlementLib.sol";
 ///      market where those virtual tokens trade, producing a price signal. At the end of trading the
 ///      market settles to the proposal whose time-weighted price clears the winning threshold, and
 ///      that proposal's payload is executed against the venture treasury. Holders redeem the winning
-///      proposal's virtual tokens 1:1 for the underlying (`claimSettlement`). Upgradeable via UUPS.
+///      proposal's virtual tokens 1:1 for the underlying (`claimSettlement`, or `claimSettlementFor` on
+///      their behalf). Upgradeable via UUPS.
 contract UmiaMarketCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IUmiaMarketCore {
     using SafeTransferLib for address;
 
@@ -39,6 +41,7 @@ contract UmiaMarketCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IUmi
 
     /// @notice High-bit prefix distinguishing LP-share token IDs from virtual venture/money IDs.
     uint256 internal constant LP_SHARE_TOKEN_PREFIX = 1 << 255;
+    uint256 internal constant WAD = 1e18;
 
     /// @notice EIP-712 domain type hash.
     bytes32 internal constant DOMAIN_TYPEHASH =
@@ -99,8 +102,11 @@ contract UmiaMarketCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IUmi
     /// @notice Current swap-permit nonce per signer (replay protection for relayed swaps).
     mapping(address signer => uint256 nonce) public swapNonces;
 
+    /// @inheritdoc IUmiaMarketCore
+    mapping(uint256 marketId => address) public activeManager;
+
     /// @notice Reserved storage slots for future upgrades.
-    uint256[50] private __gap;
+    uint256[49] private __gap;
 
     // ─────────────────────────────────────────────────────────
     // Initialization & upgrades
@@ -433,6 +439,17 @@ contract UmiaMarketCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IUmi
         unchecked {
             ++activeUnsettledMarketCount;
         }
+        activeManager[id] = _activeManager(params.ventureId);
+    }
+
+    /// @dev V1 vaults have no active manager, so their markets record none.
+    function _activeManager(uint256 ventureId) private view returns (address) {
+        address vault = HUB.ventureLiquidityVault(HUB.ventureById(ventureId).venture);
+        try ISpotLiquidityVaultV2(vault).activeManager() returns (address manager) {
+            return manager;
+        } catch {
+            return address(0);
+        }
     }
 
     // ─────────────────────────────────────────────────────────
@@ -458,6 +475,14 @@ contract UmiaMarketCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IUmi
     /// @param marketId The market ID.
     function claimSettlement(uint256 marketId) external nonReentrant {
         SettlementLib.claim(HUB, marketId, msg.sender, balanceOf, totalSupply, _markets, _pools, _settle, _hasClaimed);
+    }
+
+    /// @notice Redeems each user's winning-proposal position to that user, so anyone can clear
+    ///         forgotten claims. Users who already claimed or hold nothing are skipped.
+    /// @param marketId The market ID.
+    /// @param users The holders to redeem for.
+    function claimSettlementFor(uint256 marketId, address[] calldata users) external nonReentrant {
+        SettlementLib.claimFor(HUB, marketId, users, balanceOf, totalSupply, _markets, _pools, _settle, _hasClaimed);
     }
 
     /// @notice Collects the protocol fees accrued by a settled market's winning proposal.
@@ -787,7 +812,7 @@ contract UmiaMarketCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IUmi
         uint256 deadline
     ) external nonReentrant returns (uint256 amountIn) {
         if (block.timestamp > deadline) revert DeadlineExpired();
-        amountIn = _swapExactOut(proposalId, amountOut, amountInMax, maxPriceImpactBps, zeroForOne, msg.sender);
+        amountIn = _swapExactOut(proposalId, amountOut, amountInMax, maxPriceImpactBps, zeroForOne, msg.sender, false);
     }
 
     /// @notice Executes an exact-output swap on behalf of a signer who authorized it via EIP-712.
@@ -820,8 +845,51 @@ contract UmiaMarketCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IUmi
             swapNonces[signer]++;
         }
         amountIn = _swapExactOut(
-            permit.proposalId, permit.amountOut, permit.amountInMax, permit.maxPriceImpactBps, permit.zeroForOne, signer
+            permit.proposalId,
+            permit.amountOut,
+            permit.amountInMax,
+            permit.maxPriceImpactBps,
+            permit.zeroForOne,
+            signer,
+            false
         );
+    }
+
+    /// @notice Swaps the same fraction of each proposal pool's output reserve in every proposal of a
+    ///         market, no-op included.
+    /// @dev Every pool's price moves by the same factor, so no proposal gains on another and the
+    ///      settlement comparison is unchanged. The market's `activeManager` pays no fee here;
+    ///      everyone else pays the market's normal fee on every leg.
+    /// @param marketId The market ID.
+    /// @param zeroForOne True to sell virtual venture for virtual money in every proposal.
+    /// @param outFractionWad Each leg's output as a fraction of its pool's output reserve, in 1e18.
+    /// @param amountInMaxPerLeg The maximum input of each leg.
+    /// @param deadline The latest block timestamp at which the swap may execute.
+    /// @return amountsIn Each leg's input, in `marketProposalIds` order.
+    /// @return amountsOut Each leg's output, in `marketProposalIds` order.
+    function basketSwapExactOut(
+        uint256 marketId,
+        bool zeroForOne,
+        uint256 outFractionWad,
+        uint256 amountInMaxPerLeg,
+        uint256 deadline
+    ) external nonReentrant returns (uint256[] memory amountsIn, uint256[] memory amountsOut) {
+        if (block.timestamp > deadline) revert DeadlineExpired();
+        if (_markets[marketId].id == 0) revert MarketNotFound();
+        if (outFractionWad == 0 || outFractionWad >= WAD) revert InvalidAmount();
+        bool exempt = msg.sender == activeManager[marketId];
+        uint256[] memory proposalIds = _markets[marketId].proposalIds;
+        amountsIn = new uint256[](proposalIds.length);
+        amountsOut = new uint256[](proposalIds.length);
+        for (uint256 i = 0; i < proposalIds.length; i++) {
+            CPMM.State storage cpmmState = _pools[proposalIds[i]].cpmm;
+            amountsOut[i] = FullMath.mulDiv(zeroForOne ? cpmmState.reserve1 : cpmmState.reserve0, outFractionWad, WAD);
+            if (amountsOut[i] == 0) revert InvalidAmount();
+            amountsIn[i] = _swapExactOut(
+                proposalIds[i], amountsOut[i], amountInMaxPerLeg, type(uint256).max, zeroForOne, msg.sender, exempt
+            );
+        }
+        emit BasketSwap(marketId, msg.sender, zeroForOne, outFractionWad, exempt);
     }
 
     /// @notice Invalidates all outstanding swap permits for the caller by advancing their nonce.
@@ -847,16 +915,18 @@ contract UmiaMarketCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IUmi
         amountOut = _finalizeSwap(proposalId, zeroForOne, trader, result, protocolFee);
     }
 
-    /// @dev Shared exact-output swap implementation for direct and permit-authorized callers.
+    /// @dev Shared exact-output swap implementation for direct, permit-authorized and basket callers.
     function _swapExactOut(
         uint256 proposalId,
         uint256 amountOut,
         uint256 amountInMax,
         uint256 maxPriceImpactBps,
         bool zeroForOne,
-        address trader
+        address trader,
+        bool feeExempt
     ) internal returns (uint256 amountIn) {
         (CPMM.State storage cpmmState, uint16 swapFeeBps, uint16 protocolCutBps) = _beforeSwap(proposalId);
+        if (feeExempt) (swapFeeBps, protocolCutBps) = (0, 0);
         (CPMM.SwapResult memory result, uint256 protocolFee) = CPMMWithFee._swapExactOut(
             cpmmState, amountOut, amountInMax, maxPriceImpactBps, zeroForOne, swapFeeBps, protocolCutBps
         );

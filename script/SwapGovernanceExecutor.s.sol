@@ -49,7 +49,9 @@ contract SwapGovernanceExecutor is Script {
                 // Zero key = hardware wallet mode: the signer comes from the forge CLI wallet
                 // flags (--ledger/--trezor) and the address from DEPLOYER_ADDRESS.
                 deployerKey: vm.envOr("DEPLOYER_PRIVATE_KEY", uint256(0)),
-                hub: ProtocolState.hubFromContractsJson(vm.envString("UMIA_ENV"), vm.envString("UMIA_CHAIN")),
+                hub: ProtocolState.hubFromContractsJson(
+                    vm.envOr("UMIA_ENV", string("")), vm.envOr("UMIA_CHAIN", string(""))
+                ),
                 execute: vm.envOr("EXECUTE_UPGRADE", false)
             })
         );
@@ -154,7 +156,8 @@ contract SwapGovernanceExecutor is Script {
         }
         require(ventures < maxScan, "venture scan hit MAX_VENTURE_SCAN; raise it and re-run");
         require(
-            overrides == 0, "ventures carry per-venture executor overrides; repoint them to the new executor and re-run"
+            overrides == 0,
+            "ventures carry per-venture executor overrides; clear them with setVentureGovernanceExecutor(id, address(0)) and re-run"
         );
 
         IUmiaMarketCore core = IUmiaMarketCore(hub.umiaMarketCore());

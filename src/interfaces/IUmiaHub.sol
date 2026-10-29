@@ -59,6 +59,7 @@ interface IUmiaHub {
     error VentureBeaconNotSet();
     error CcaFactoryNotSet();
     error InvalidPoolTickSpacing();
+    error InvalidLaunchActiveHalfWidth();
     error ActiveMarketsPreventUpdate();
     error InvalidToken();
     error NotVentureToken();
@@ -66,6 +67,11 @@ interface IUmiaHub {
     error TokenBalanceZero();
     error NotVentureLBP();
     error SpotLiquidityVaultAlreadyRegistered();
+    error NotSpotMigrator();
+    error SpotLiquidityVaultNotRegistered();
+    error InvalidSpotLiquidityVault();
+    error SpotLiquidityVaultStillFunded();
+    error InvalidVestingAuthority();
 
     // ─────────────────────────────────────────────────────────
     // Events
@@ -96,9 +102,15 @@ interface IUmiaHub {
     event DecisionSwapFeeBpsUpdated(uint16 oldBps, uint16 newBps);
     event DecisionProtocolFeeCutBpsUpdated(uint16 oldBps, uint16 newBps);
     event DefaultPoolTickSpacingUpdated(int24 tickSpacing);
+    event LaunchAnchorBpsUpdated(uint16 oldBps, uint16 newBps);
+    event LaunchActiveHalfWidthTicksUpdated(int24 oldHalfWidth, int24 newHalfWidth);
     event MigrationDelayBlocksUpdated(uint64 blocks_);
     event SweepDelayBlocksUpdated(uint64 blocks_);
     event SpotLiquidityVaultRegistered(address indexed venture, address indexed vault);
+    event SpotLiquidityVaultMigrated(address indexed venture, address indexed oldVault, address indexed newVault);
+    event SpotMigratorUpdated(address indexed oldMigrator, address indexed newMigrator);
+    event ActiveLiquidityKeeperUpdated(address indexed oldKeeper, address indexed newKeeper);
+    event VentureVestingAuthoritySet(uint256 indexed ventureId, address indexed authority);
 
     // ─────────────────────────────────────────────────────────
     // View Functions
@@ -124,6 +136,12 @@ interface IUmiaHub {
     function vetoGuardian() external view returns (address);
 
     function vestingAdmin() external view returns (address);
+    /// @notice The only caller allowed to move a venture's spot vault pointer (`migrateSpotLiquidityVault`).
+    function spotMigrator() external view returns (address);
+    /// @notice Default keeper for every venture's ActiveLiquidityManager unless the venture overrides it.
+    function activeLiquidityKeeper() external view returns (address);
+    /// @notice The VentureVestingAuthority that owns `ventureId`'s vesting grants, or zero if none.
+    function ventureVestingAuthority(uint256 ventureId) external view returns (address);
     function ventureBeacon() external view returns (address);
     /// @notice The single recipient of all Umia protocol fee revenue (spot + decision venues).
     function protocolFeeRecipient() external view returns (address);
@@ -141,6 +159,12 @@ interface IUmiaHub {
     function decisionProtocolFeeCutBps() external view returns (uint16);
 
     function defaultPoolTickSpacing() external view returns (int24);
+
+    /// @notice Share of a V2 launch's pool-bound liquidity that goes to the anchor vault (0 = unset).
+    function launchAnchorBps() external view returns (uint16);
+
+    /// @notice Half width, in ticks, of the range a V2 launch opens for the ALM (0 = unset).
+    function launchActiveHalfWidthTicks() external view returns (int24);
     function migrationDelayBlocks() external view returns (uint64);
     function sweepDelayBlocks() external view returns (uint64);
     function umiaMarketStake() external view returns (address);
@@ -168,13 +192,19 @@ interface IUmiaHub {
     function setDecisionSwapFeeBps(uint16 bps) external;
     function setDecisionProtocolFeeCutBps(uint16 bps) external;
     function setDefaultPoolTickSpacing(int24 tickSpacing) external;
+    function setLaunchAnchorBps(uint16 bps) external;
+    function setLaunchActiveHalfWidthTicks(int24 halfWidth) external;
     function setMigrationDelayBlocks(uint64 blocks_) external;
     function setSweepDelayBlocks(uint64 blocks_) external;
     function registerSpotLiquidityVault(address venture, address vault) external;
+    function migrateSpotLiquidityVault(address venture, address newVault) external;
+    function setSpotMigrator(address _migrator) external;
+    function setActiveLiquidityKeeper(address _keeper) external;
     function setUmiaMarketStake(address _umiaMarketStake) external;
     function setVetoGuardian(address _guardian) external;
 
     function setVestingAdmin(address _admin) external;
+    function setVentureVestingAuthority(uint256 ventureId, address authority) external;
     function tripDecisionMarketCircuitBreaker(uint256 _marketId) external;
     function createVenture(CreateVentureParams calldata _params) external returns (uint256 id, address payable venture);
     function createVentureWithToken(CreateVentureWithTokenParams calldata _params)

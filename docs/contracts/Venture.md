@@ -13,41 +13,47 @@ Treasury contract for a single venture.
 
 ## Key state
 
-- `token`, `moneyToken`, `lbp`
+- `token`, `moneyToken`, `lbp`, `HUB`
 - `minMarketStake`
 - `monthlyAllowance[token]` (`amount`, `spent`, `currentMonth`)
+- `allowanceSources[source]`, `allowanceSourceCount[underlying]` (budget sources, see GOVERNANCE_TREASURY_LAYER.md)
 - `isTeamMember`
 - `documents`, `documentCount`
+- `tradingPauseDuration`, `tradingPauseDeadline` (post-LBP pause, at most `MAX_TRADING_PAUSE_DURATION = 60 days`)
 - liquidation:
   - `liquidationActive`
-  - `liquidationTotalSupply`
-  - `liquidationAssets[]`
+  - `authorizedLiquidator`
 
 ## Important functions
 
 - Initialization/callbacks:
-  - `initialize(...)` (only hub)
-  - `onLBPMigrated()` (only configured LBP; applies the optional trading pause)
+  - `initializeProxy(hub)`, then `initialize(...)` (only hub)
+  - `onLBPMigrated()` (only configured LBP; pauses the token for `tradingPauseDuration` if non-zero)
+  - `startTrading()` (team members any time, anyone after `tradingPauseDeadline`; unpauses the token)
 - Treasury mutation:
   - `mint`, `burn`, `withdraw`, `withdrawERC721`, `withdrawERC1155`, `executeCall`
 - Governance-only updates:
   - `updateTeamMember`
   - `updateMonthlyAllowance`
+  - `setAllowance`, `setAllowanceSource`
   - `uploadDocument`
-  - `startLiquidation`
+  - `setLiquidator`
 - Team-member withdrawal:
-  - `withdrawMonthlyAllowance`
+  - `withdrawMonthlyAllowance`, `withdrawMonthlyAllowanceFrom`
 - Liquidation claims:
-  - `claimLiquidation`
+  - handled by the liquidator (`ILiquidator.claim()`), which calls `burnFrom` and `withdraw` on the venture
+- Hub-only:
+  - `setMinMarketStake`
 
 ## Access control
 
-- `onlyHubOrMarketCoreOrExecutor`: core treasury mutation.
-- `onlyExecutor`: governance-only update functions.
+- `onlyExecutor` (the Hub's `governanceExecutor(venture)`): treasury mutation and governance updates, including UUPS upgrades.
+- `onlyHub`: `setMinMarketStake`.
+- During liquidation the `withdraw*` functions and `burnFrom` accept only `authorizedLiquidator`.
 - `whenNotLiquidating`: blocks most normal treasury operations once liquidation starts.
 
 ## Notes
 
 - Allowance reset uses `CalendarLib.timestampToMonth`.
-- ERC721 assets are explicitly disallowed in `startLiquidation`.
-- Spot liquidity lives in the venture's `SpotLiquidityVault` (see UIP-001), not in the treasury.
+- The venture does not validate liquidation assets; `SimpleLiquidator.initialize` rejects ERC721 and ERC1155 entries (`InvalidAssetType`).
+- Spot liquidity lives outside the treasury: in `SpotLiquidityVault` for a V1 venture; in `SpotLiquidityVaultV2` plus the venture's `ActiveLiquidityManager` for a V2 venture, registered at launch by `UmiaLBPV2` or, for a migrated V1 venture, through `migrateSpotLiquidityVault`. The treasury holds the vault's shares.

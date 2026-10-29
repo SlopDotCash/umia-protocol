@@ -159,6 +159,7 @@ contract DecisionMarketCircuitBreakerTest is DecisionMarketBase {
 
         vm.warp(block.timestamp + 4 days);
         mm.settleMarket(otherMarketId);
+        vm.warp(block.timestamp + 1 hours);
         mm.executeWinningProposal(otherMarketId);
     }
 
@@ -202,7 +203,15 @@ contract DecisionMarketCircuitBreakerTest is DecisionMarketBase {
 
     function test_setDecisionMarketExecutionDelay() public {
         assertEq(hub.MAX_EXECUTION_DELAY(), 12 hours);
+        assertEq(hub.MIN_EXECUTION_DELAY(), 1 hours);
         assertEq(hub.DEFAULT_EXECUTION_DELAY(), 4 hours);
+
+        vm.prank(umiaAdmin);
+        vm.expectRevert(IUmiaHub.InvalidExecutionDelay.selector);
+        hub.setDecisionMarketExecutionDelay(uint32(1 hours) - 1);
+        vm.prank(umiaAdmin);
+        vm.expectRevert(IUmiaHub.InvalidExecutionDelay.selector);
+        hub.setDecisionMarketExecutionDelay(0);
 
         vm.prank(umiaAdmin);
         hub.setDecisionMarketExecutionDelay(6 hours);

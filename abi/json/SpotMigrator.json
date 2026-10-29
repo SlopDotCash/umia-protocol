@@ -1,0 +1,335 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "_hub",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_poolManager",
+        "type": "address",
+        "internalType": "contract IPoolManager"
+      },
+      {
+        "name": "_hookV2",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_sourceHook",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_code",
+        "type": "address",
+        "internalType": "contract SpotLiquidityV2Code"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "HUB",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MIN_ANCHOR_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "hookV2",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "migrate",
+    "inputs": [
+      {
+        "name": "p",
+        "type": "tuple",
+        "internalType": "struct SpotMigrator.MigrateParams",
+        "components": [
+          {
+            "name": "anchorBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "activeSlices",
+            "type": "tuple[]",
+            "internalType": "struct ActiveSlices.Slice[]",
+            "components": [
+              {
+                "name": "tickLowerOffset",
+                "type": "int24",
+                "internalType": "int24"
+              },
+              {
+                "name": "tickUpperOffset",
+                "type": "int24",
+                "internalType": "int24"
+              },
+              {
+                "name": "bps",
+                "type": "uint16",
+                "internalType": "uint16"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "poolManager",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IPoolManager"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "prepare",
+    "inputs": [
+      {
+        "name": "venture",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "vault",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "alm",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "prepared",
+    "inputs": [
+      {
+        "name": "venture",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "vault",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "alm",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "migrated",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "seamBlocked",
+    "inputs": [
+      {
+        "name": "venture",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "sourceHook",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "VentureMigrated",
+    "inputs": [
+      {
+        "name": "venture",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "oldVault",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newVault",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "alm",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "PoolId"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "VenturePrepared",
+    "inputs": [
+      {
+        "name": "venture",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "vault",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "alm",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AlreadyMigrated",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AlreadyPrepared",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DeploymentFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidParams",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidSlice",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoSpotVault",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotPrepared",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NothingToMigrate",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SeamPriceDeviationTooHigh",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnknownSourcePool",
+    "inputs": []
+  }
+]

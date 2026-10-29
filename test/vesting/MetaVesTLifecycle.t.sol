@@ -757,6 +757,7 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
         assertEq(mm.winningProposalByMarketId(_marketId).proposalId, grantProposalId, "grant proposal should win");
 
         address predicted = vm.computeCreateAddress(vestingFactory, vm.getNonce(vestingFactory));
+        vm.warp(block.timestamp + 1 hours);
         mm.executeWinningProposal(_marketId);
         return predicted;
     }

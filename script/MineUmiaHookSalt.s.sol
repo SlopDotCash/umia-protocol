@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Script, console} from "forge-std/Script.sol";
 import {UmiaHook} from "../src/periphery/UmiaHook.sol";
+import {UmiaHookV2} from "../src/periphery/UmiaHookV2.sol";
 
 /// @title MineUmiaHookSalt
 /// @notice Off-chain mining script that finds a CreateX salt producing a UmiaHook address
@@ -36,6 +37,8 @@ import {UmiaHook} from "../src/periphery/UmiaHook.sol";
 ///   MAX_ATTEMPTS=10000000 \
 ///   forge script script/MineUmiaHookSalt.s.sol --rpc-url $MAINNET_RPC -vv
 ///
+/// Set HOOK_V2=true to mine for `UmiaHookV2` (same permission mask).
+///
 /// VANITY_PREFIX is optional; 0-2 bytes is practical in interpreted EVM. For longer prefixes
 /// switch to a native miner that replicates the same _computeAddr formula.
 contract MineUmiaHookSalt is Script {
@@ -59,7 +62,9 @@ contract MineUmiaHookSalt is Script {
 
         require(vanity.length <= 4, "VANITY_PREFIX > 4 bytes; switch to a native miner");
 
-        bytes32 initCodeHash = keccak256(abi.encodePacked(type(UmiaHook).creationCode, abi.encode(deployer)));
+        bytes memory creationCode =
+            vm.envOr("HOOK_V2", false) ? type(UmiaHookV2).creationCode : type(UmiaHook).creationCode;
+        bytes32 initCodeHash = keccak256(abi.encodePacked(creationCode, abi.encode(deployer)));
 
         console.log("Deployer EOA:", deployer);
         console.log("Init code hash:");
@@ -90,8 +95,11 @@ contract MineUmiaHookSalt is Script {
             console.log("Predicted address:", predicted);
             console.log("Attempts:", uint256(counter) + 1);
             console.log("");
-            console.log("Wire these env vars into Deploy.s.sol:");
-            console.log(string.concat("  UMIA_HOOK_SALT=", vm.toString(salt)));
+            bool v2 = vm.envOr("HOOK_V2", false);
+            console.log(
+                v2 ? "Wire these env vars into DeploySpotLiquidityV2.s.sol:" : "Wire these env vars into Deploy.s.sol:"
+            );
+            console.log(string.concat(v2 ? "  UMIA_HOOK_V2_SALT=" : "  UMIA_HOOK_SALT=", vm.toString(salt)));
             console.log(string.concat("  UMIA_HOOK_DEPLOYER=", vm.toString(deployer)));
             return;
         }

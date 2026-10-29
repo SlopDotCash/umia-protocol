@@ -25,6 +25,7 @@ import {IUmiaHub} from "../src/interfaces/IUmiaHub.sol";
 ///
 ///         Environment:
 ///         - UMIA_ENV, UMIA_CHAIN    select the hub from contracts.json (e.g. testnet, base-sepolia)
+///         - UMIA_HUB_ADDRESS        hub proxy address; skips the contracts.json lookup
 ///         - DEPLOYER_PRIVATE_KEY    deploys the implementation; leave unset for a hardware wallet
 ///                                   (forge --ledger/--trezor) with DEPLOYER_ADDRESS set to the signer
 ///         - UPGRADE_INIT_DATA       abi-encoded reinitializer call forwarded to upgradeToAndCall
@@ -76,7 +77,9 @@ abstract contract UpgradeBase is Script {
                 // Zero key = hardware wallet mode: the signer comes from the forge CLI wallet
                 // flags (--ledger/--trezor) and the address from DEPLOYER_ADDRESS.
                 deployerKey: vm.envOr("DEPLOYER_PRIVATE_KEY", uint256(0)),
-                hub: ProtocolState.hubFromContractsJson(vm.envString("UMIA_ENV"), vm.envString("UMIA_CHAIN")),
+                hub: ProtocolState.hubFromContractsJson(
+                    vm.envOr("UMIA_ENV", string("")), vm.envOr("UMIA_CHAIN", string(""))
+                ),
                 initData: vm.envOr("UPGRADE_INIT_DATA", bytes("")),
                 execute: vm.envOr("EXECUTE_UPGRADE", false)
             })

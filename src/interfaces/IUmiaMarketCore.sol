@@ -129,6 +129,10 @@ interface IUmiaMarketCore {
     event ProtocolFeesCollected(
         uint256 indexed marketId, address indexed feeRecipient, uint256 feeVenture, uint256 feeMoney
     );
+    /// @notice One swap of the same reserve fraction in every proposal of a market, no-op included.
+    event BasketSwap(
+        uint256 indexed marketId, address indexed trader, bool zeroForOne, uint256 outFractionWad, bool feeExempt
+    );
     /// @notice Emitted when virtual venture/money or LP-share tokens are minted, burned, or transferred.
     event VirtualTransfer(address indexed from, address indexed to, uint256 indexed id, uint256 amount);
 
@@ -136,6 +140,9 @@ interface IUmiaMarketCore {
 
     function HUB() external view returns (IUmiaHub);
     function marketCounter() external view returns (uint256);
+    /// @notice The venture's active liquidity manager at `marketId`'s creation, or zero. Its basket
+    ///         swaps pay no fee, and executing the market redeems its leftovers.
+    function activeManager(uint256 marketId) external view returns (address);
     function proposalCounter() external view returns (uint256);
     function marketInfo(uint256 marketId)
         external
@@ -196,6 +203,7 @@ interface IUmiaMarketCore {
     function merge(uint256 marketId, uint256 ventureAmount, uint256 moneyAmount) external;
     function settleMarket(uint256 marketId) external;
     function claimSettlement(uint256 marketId) external;
+    function claimSettlementFor(uint256 marketId, address[] calldata users) external;
     function executeWinningProposal(uint256 marketId) external;
     function addLiquidity(uint256 proposalId, uint256 amount0, uint256 amount1, uint256 priceX96, uint256 slippageBps)
         external;
@@ -235,6 +243,15 @@ interface IUmiaMarketCore {
     function swapExactInWithPermit(SwapExactInPermit calldata permit, address signer, bytes calldata signature)
         external
         returns (uint256 amountOut);
+
+    /// @dev Reverts with InvalidAmount if any leg's output rounds to zero.
+    function basketSwapExactOut(
+        uint256 marketId,
+        bool zeroForOne,
+        uint256 outFractionWad,
+        uint256 amountInMaxPerLeg,
+        uint256 deadline
+    ) external returns (uint256[] memory amountsIn, uint256[] memory amountsOut);
 
     function swapExactOutWithPermit(SwapExactOutPermit calldata permit, address signer, bytes calldata signature)
         external

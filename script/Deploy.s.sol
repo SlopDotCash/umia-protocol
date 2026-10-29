@@ -21,11 +21,11 @@ import {GovernanceExecutor} from "../src/core/GovernanceExecutor.sol";
 import {Venture} from "../src/core/Venture.sol";
 import {CCALens} from "@continuous-clearing-auction/lens/CCALens.sol";
 import {ProtocolFeeController} from "@liquidity-launcher/periphery/ProtocolFeeController.sol";
-import {UmiaLBPFactory} from "../src/launchpad/UmiaLBPFactory.sol";
+import {UmiaLBPFactoryV2} from "../src/launchpad/UmiaLBPFactoryV2.sol";
 import {CCAExitHelper} from "../src/periphery/CCAExitHelper.sol";
 import {Reclaim} from "../src/reclaim/Reclaim.sol";
-import {UmiaHook} from "../src/periphery/UmiaHook.sol";
-import {IUmiaHook} from "../src/interfaces/IUmiaHook.sol";
+import {UmiaHookV2} from "../src/periphery/UmiaHookV2.sol";
+import {SpotLiquidityV2Code} from "../src/periphery/SpotLiquidityV2Code.sol";
 import {UmiaTwapMilestoneCondition} from "../src/periphery/UmiaTwapMilestoneCondition.sol";
 
 address constant CREATE_X = 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed;
@@ -133,9 +133,9 @@ contract Deploy is Script {
 
         _deployCcaExitHelper();
 
-        // Deploy the singleton UmiaHook via CreateX. The hook constructor takes only INITIAL_OWNER
+        // Deploy the singleton UmiaHookV2 via CreateX. The hook constructor takes only INITIAL_OWNER
         // (the deployer EOA), so init code is byte-identical across chains and CREATE2 with the same
-        // salt + CreateX address yields the same UmiaHook address on every target chain.
+        // salt + CreateX address yields the same UmiaHookV2 address on every target chain.
         //
         // CreateX's _guard for our `0xDead00...DD00` salt prefix (SenderBytes.Random,
         // RedeployFlag.False) hashes the salt before passing it to CREATE2:
@@ -144,44 +144,36 @@ contract Deploy is Script {
         // CreateX; CreateX applies _guard internally. MineUmiaHookSalt.s.sol mirrors this
         // transformation when mining, so the address it predicts matches what CreateX deploys.
         address deployerEOA = vm.envAddress("UMIA_HOOK_DEPLOYER");
-        bytes32 hookSalt = vm.envBytes32("UMIA_HOOK_SALT");
+        bytes32 hookSalt = vm.envBytes32("UMIA_HOOK_V2_SALT");
         bytes32 hookGuardedSalt = keccak256(abi.encodePacked(hookSalt));
-        bytes memory hookCreationCode = abi.encodePacked(type(UmiaHook).creationCode, abi.encode(deployerEOA));
+        bytes memory hookCreationCode = abi.encodePacked(type(UmiaHookV2).creationCode, abi.encode(deployerEOA));
         address predictedHook = HookMiner.computeAddress(CREATE_X, uint256(hookGuardedSalt), hookCreationCode);
         require(
             uint160(predictedHook) & 0x3FFF == UMIA_HOOK_FLAGS,
-            "Deploy: predicted UmiaHook address missing required permission bits"
+            "Deploy: predicted UmiaHookV2 address missing required permission bits"
         );
-        console.log("UmiaHook will deploy at:", predictedHook);
-
-        // Note: previously asserted tx.origin == deployerEOA here as a fast-fail. Removed
-        // because tx.origin breaks under Safe/relay/HW-wallet flows, and the address-match
-        // check below (`umiaHookAddr == predictedHook`) is the actual guarantee: a wrong
-        // INITIAL_OWNER produces a different init code hash and therefore a different
-        // predicted address, which would cause that require to revert.
+        console.log("UmiaHookV2 will deploy at:", predictedHook);
+        // No tx.origin assert: it breaks under Safe, relay and hardware-wallet flows. The address-match
+        // require below is the real guarantee, since a wrong INITIAL_OWNER changes the predicted address.
         if (tx.origin != deployerEOA) {
             console.log("Note: tx.origin differs from UMIA_HOOK_DEPLOYER; relying on address-match guard.");
         }
-
-        // Deploy via CreateX. The selector is deployCreate2(bytes32 salt, bytes memory initCode).
         (bool ok, bytes memory ret) =
             CREATE_X.call(abi.encodeWithSignature("deployCreate2(bytes32,bytes)", hookSalt, hookCreationCode));
-        require(ok, "Deploy: CreateX UmiaHook deploy failed");
-        address umiaHookAddr = abi.decode(ret, (address));
-        require(umiaHookAddr == predictedHook, "Deploy: actual UmiaHook address differs from predicted");
-        UmiaHook umiaHook = UmiaHook(umiaHookAddr);
-        console.log("UmiaHook deployed at:", umiaHookAddr);
+        require(ok, "Deploy: CreateX UmiaHookV2 deploy failed");
+        address hookAddr = abi.decode(ret, (address));
+        require(hookAddr == predictedHook, "Deploy: actual UmiaHookV2 address differs from predicted");
+        UmiaHookV2 hook = UmiaHookV2(hookAddr);
+        console.log("UmiaHookV2 deployed at:", hookAddr);
 
-        // Deploy the factory with the canonical hook address.
-        UmiaLBPFactory lbpFactory = new UmiaLBPFactory(IPoolManager(poolManager), umiaHookAddr, address(hub));
-        console.log("UmiaLBPFactory deployed at:", address(lbpFactory));
-
-        // Initialize the hook with the factory + PoolManager.
-        // Must be called by the deployer EOA so the hook's INITIAL_OWNER check passes.
-        umiaHook.initialize(address(lbpFactory), IPoolManager(poolManager));
-        console.log("UmiaHook initialized");
+        SpotLiquidityV2Code code = new SpotLiquidityV2Code();
+        console.log("SpotLiquidityV2Code deployed at:", address(code));
+        UmiaLBPFactoryV2 lbpFactory = new UmiaLBPFactoryV2(IPoolManager(poolManager), hookAddr, address(hub), code);
+        console.log("UmiaLBPFactoryV2 deployed at:", address(lbpFactory));
 
         // Deploy Reclaim verifier (skip if RECLAIM_ADDRESS env points at an existing one).
+        // Deploy before the hook initialization transaction: V2 adds the code container above,
+        // so this keeps the fresh devnet verifier at the nonce pinned by the extension/attestor.
         address existingReclaim = vm.envOr("RECLAIM_ADDRESS", address(0));
         Reclaim reclaim;
         if (existingReclaim != address(0)) {
@@ -192,6 +184,10 @@ contract Deploy is Script {
             reclaim = new Reclaim();
             console.log("Reclaim deployed at:", address(reclaim));
         }
+
+        // Must be sent by the deployer EOA: initialize checks INITIAL_OWNER.
+        hook.initialize(address(lbpFactory), IPoolManager(poolManager), address(hub));
+        console.log("UmiaHookV2 initialized");
 
         // Deploy the per-chain MetaVesT singletons (#1053). Same deploy-or-reuse-via-env
         // contract as CCA_FACTORY / RECLAIM_ADDRESS above: devnet redeploys fresh on every
@@ -213,6 +209,10 @@ contract Deploy is Script {
         hub.setConditionalMarketOracle(address(conditionalMarketOracle));
         hub.setMarketCreationSigner(marketSigner);
         hub.setLbpStrategyFactory(address(lbpFactory));
+        // Launches split pool-bound liquidity 75/25 between the anchor vault and the ALM. The ALM's first
+        // range spans 0.33x to 3x around the clearing price: 183 spacings of 60 each side.
+        hub.setLaunchAnchorBps(7_500);
+        hub.setLaunchActiveHalfWidthTicks(10_980);
         hub.setCcaFactory(address(ccaFactory));
         hub.setProtocolFeeRecipient(deployer); // swap fees + protocol cuts default in initialize()
         console.log("Hub configured with all contract addresses");
@@ -237,8 +237,9 @@ contract Deploy is Script {
         console.log("PROTOCOL_FEE_CONTROLLER_ADDRESS=", address(ccaFactory.protocolFeeController()));
         console.log("AUCTION_STATE_LENS_ADDRESS=", address(auctionStateLens));
         console.log("CCA_LENS_ADDRESS=", address(ccaLens));
-        console.log("UMIA_HOOK_ADDRESS=", umiaHookAddr);
-        console.log("LBP_FACTORY_ADDRESS=", address(lbpFactory));
+        console.log("UMIA_HOOK_V2_ADDRESS=", hookAddr);
+        console.log("LBP_FACTORY_V2_ADDRESS=", address(lbpFactory));
+        console.log("SPOT_LIQUIDITY_V2_CODE_ADDRESS=", address(code));
         console.log("RECLAIM_ADDRESS=", address(reclaim));
         console.log("UMIA_MARKET_STAKE_ADDRESS=", address(marketStake));
 
@@ -268,6 +269,14 @@ contract Deploy is Script {
         if (vetoGuardian != address(0)) {
             hub.setVetoGuardian(vetoGuardian);
             console.log("Veto guardian set:", vetoGuardian);
+        }
+        address keeper = _requireRoleDecision(
+            "ACTIVE_LIQUIDITY_KEEPER",
+            "no address can rebalance an ActiveLiquidityManager until setActiveLiquidityKeeper is called."
+        );
+        if (keeper != address(0)) {
+            hub.setActiveLiquidityKeeper(keeper);
+            console.log("Active liquidity keeper set:", keeper);
         }
     }
 

@@ -15,9 +15,9 @@ import {LedgerLib} from "./LedgerLib.sol";
 
 /// @title SettlementLib
 /// @notice Implements settlement for UmiaMarketCore: `settle` (winner selection by TWAP, winning-fee
-///         reservation, and re-adding excess liquidity to the spot market), `claim` (per-user
-///         redemption of the winning proposal's tokens), and `collectFees` (winning-proposal
-///         protocol fees).
+///         reservation, and re-adding excess liquidity to the spot market), `claim` / `claimFor`
+///         (per-user redemption of the winning proposal's tokens), and `collectFees`
+///         (winning-proposal protocol fees).
 /// @dev Executed via delegatecall from UmiaMarketCore, so it operates on the core's storage, which
 ///      is passed in as explicit references.
 library SettlementLib {
@@ -156,45 +156,37 @@ library SettlementLib {
         mapping(uint256 => SettleAcct) storage settleAcct,
         mapping(uint256 => mapping(address => bool)) storage hasClaimed
     ) external {
-        MarketData storage market = markets[marketId];
-        if (market.id == 0) revert IUmiaMarketCore.MarketNotFound();
-        if (block.timestamp < market.tradingEnd) revert IUmiaMarketCore.MarketNotEnded();
-
-        uint256 winningPid = settleAcct[marketId].winningProposalId;
-        if (winningPid == 0) revert IUmiaMarketCore.MarketNotSettled();
+        uint256 winningPid = _claimableWinner(marketId, markets, settleAcct);
         if (hasClaimed[marketId][user]) revert IUmiaMarketCore.AlreadyClaimed();
-
-        uint256 ventureId = market.ventureId;
-
-        // Redeem the user's LP-share position first (mints virtual tokens from reserves to the user).
-        _claimLiquidityPosition(winningPid, user, balanceOf, totalSupply, pools);
-
-        uint256 vVentureId = _virtualVentureId(winningPid);
-        uint256 vMoneyId = _virtualMoneyId(winningPid);
-
-        uint256 virtualVentureBal = balanceOf[user][vVentureId];
-        uint256 virtualMoneyBal = balanceOf[user][vMoneyId];
-
-        if (virtualVentureBal == 0 && virtualMoneyBal == 0) revert IUmiaMarketCore.NoClaimableTokens();
-
-        // CEI: mark claimed before any external transfer.
-        hasClaimed[marketId][user] = true;
-
-        Pool storage winningPool = pools[winningPid];
-
-        // Burn virtual tokens and transfer real tokens to user 1:1.
-        if (virtualVentureBal > 0) {
-            LedgerLib.burn(balanceOf, totalSupply, user, vVentureId, virtualVentureBal);
-            winningPool.userVirtualVentureSupply -= virtualVentureBal;
-            hub.ventureTokenById(ventureId).safeTransfer(user, virtualVentureBal);
+        if (!_redeem(
+                hub, marketId, markets[marketId].ventureId, winningPid, user, balanceOf, totalSupply, pools, hasClaimed
+            )) {
+            revert IUmiaMarketCore.NoClaimableTokens();
         }
-        if (virtualMoneyBal > 0) {
-            LedgerLib.burn(balanceOf, totalSupply, user, vMoneyId, virtualMoneyBal);
-            winningPool.userVirtualMoneySupply -= virtualMoneyBal;
-            hub.ventureMoneyTokenById(ventureId).safeTransfer(user, virtualMoneyBal);
-        }
+    }
 
-        emit IUmiaMarketCore.SettlementClaimed(marketId, user, virtualVentureBal, virtualMoneyBal);
+    /// @notice Redeem each of `users`' winning-proposal positions to that user, skipping users who
+    ///         already claimed or hold nothing.
+    function claimFor(
+        IUmiaHub hub,
+        uint256 marketId,
+        address[] calldata users,
+        mapping(address => mapping(uint256 => uint256)) storage balanceOf,
+        mapping(uint256 => uint256) storage totalSupply,
+        mapping(uint256 => MarketData) storage markets,
+        mapping(uint256 => Pool) storage pools,
+        mapping(uint256 => SettleAcct) storage settleAcct,
+        mapping(uint256 => mapping(address => bool)) storage hasClaimed
+    ) external {
+        uint256 winningPid = _claimableWinner(marketId, markets, settleAcct);
+        uint256 ventureId = markets[marketId].ventureId;
+        for (uint256 i = 0; i < users.length; i++) {
+            address user = users[i];
+            // The core's own balance holds the pools' reserves, not a claimable position.
+            if (user == address(this)) revert IUmiaMarketCore.InvalidRecipient();
+            if (hasClaimed[marketId][user]) continue;
+            _redeem(hub, marketId, ventureId, winningPid, user, balanceOf, totalSupply, pools, hasClaimed);
+        }
     }
 
     /// @notice Transfer the winning proposal's accrued protocol fees to the Hub fee recipient.
@@ -234,6 +226,59 @@ library SettlementLib {
     // ─────────────────────────────────────────────────────────
     // Internal helpers
     // ─────────────────────────────────────────────────────────
+
+    function _claimableWinner(
+        uint256 marketId,
+        mapping(uint256 => MarketData) storage markets,
+        mapping(uint256 => SettleAcct) storage settleAcct
+    ) internal view returns (uint256 winningPid) {
+        MarketData storage market = markets[marketId];
+        if (market.id == 0) revert IUmiaMarketCore.MarketNotFound();
+        if (block.timestamp < market.tradingEnd) revert IUmiaMarketCore.MarketNotEnded();
+        winningPid = settleAcct[marketId].winningProposalId;
+        if (winningPid == 0) revert IUmiaMarketCore.MarketNotSettled();
+    }
+
+    /// @return claimed False when `user` had nothing to redeem.
+    function _redeem(
+        IUmiaHub hub,
+        uint256 marketId,
+        uint256 ventureId,
+        uint256 winningPid,
+        address user,
+        mapping(address => mapping(uint256 => uint256)) storage balanceOf,
+        mapping(uint256 => uint256) storage totalSupply,
+        mapping(uint256 => Pool) storage pools,
+        mapping(uint256 => mapping(address => bool)) storage hasClaimed
+    ) internal returns (bool claimed) {
+        // Redeem the user's LP-share position first (mints virtual tokens from reserves to the user).
+        _claimLiquidityPosition(winningPid, user, balanceOf, totalSupply, pools);
+
+        uint256 virtualVentureBal = balanceOf[user][_virtualVentureId(winningPid)];
+        uint256 virtualMoneyBal = balanceOf[user][_virtualMoneyId(winningPid)];
+
+        if (virtualVentureBal == 0 && virtualMoneyBal == 0) return false;
+
+        // CEI: mark claimed before any external transfer.
+        hasClaimed[marketId][user] = true;
+
+        Pool storage winningPool = pools[winningPid];
+
+        // Burn virtual tokens and transfer real tokens to user 1:1.
+        if (virtualVentureBal > 0) {
+            LedgerLib.burn(balanceOf, totalSupply, user, _virtualVentureId(winningPid), virtualVentureBal);
+            winningPool.userVirtualVentureSupply -= virtualVentureBal;
+            hub.ventureTokenById(ventureId).safeTransfer(user, virtualVentureBal);
+        }
+        if (virtualMoneyBal > 0) {
+            LedgerLib.burn(balanceOf, totalSupply, user, _virtualMoneyId(winningPid), virtualMoneyBal);
+            winningPool.userVirtualMoneySupply -= virtualMoneyBal;
+            hub.ventureMoneyTokenById(ventureId).safeTransfer(user, virtualMoneyBal);
+        }
+
+        emit IUmiaMarketCore.SettlementClaimed(marketId, user, virtualVentureBal, virtualMoneyBal);
+        return true;
+    }
 
     /// @notice Redeem a user's LP-share position pro-rata: burn shares, pull reserves out, and
     ///         mint the corresponding virtual tokens to the user.

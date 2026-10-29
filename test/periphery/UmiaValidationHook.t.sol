@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IValidationHook} from "@continuous-clearing-auction/interfaces/IValidationHook.sol";
-import {AuctionStep} from "@continuous-clearing-auction/libraries/StepLib.sol";
 import {
     IBaseERC1155ValidationHook
 } from "@continuous-clearing-auction/periphery/validationHooks/BaseERC1155ValidationHook.sol";
@@ -12,377 +10,16 @@ import {
     IGatedERC1155ValidationHook
 } from "@continuous-clearing-auction/periphery/validationHooks/GatedERC1155ValidationHook.sol";
 import {Ownable} from "@solady/auth/Ownable.sol";
-import {SSTORE2} from "@solady/utils/SSTORE2.sol";
 import {IGatedValidationHook} from "../../src/interfaces/IGatedValidationHook.sol";
 import {IMaxBidPriceValidationHook} from "../../src/interfaces/IMaxBidPriceValidationHook.sol";
+import {IVerifyEveryBidHook} from "../../src/interfaces/IVerifyEveryBidHook.sol";
 import {IUmiaValidationHook} from "../../src/interfaces/IUmiaValidationHook.sol";
 import {UmiaValidationHook} from "../../src/periphery/UmiaValidationHook.sol";
-import {Reclaim} from "../../src/reclaim/Reclaim.sol";
-import {Claims} from "../../src/reclaim/Claims.sol";
+import {HookServerPermits} from "../../src/periphery/HookServerPermits.sol";
 import {MockArbSys} from "../mocks/MockArbSys.sol";
+import {UmiaValidationHookBase, MockCCA, StaleMockCCA} from "./UmiaValidationHookBase.t.sol";
 
-contract MockCCA {
-    address private _pointer;
-    uint64 private _startBlock;
-    uint256 private _floorPrice;
-    uint256 private _tickSpacing;
-
-    uint24[] private _mps;
-    uint64[] private _starts;
-    uint64[] private _ends;
-
-    constructor(bytes memory _stepsData, uint64 startBlock_) {
-        _pointer = SSTORE2.write(_stepsData);
-        _startBlock = startBlock_;
-        _floorPrice = 1000;
-        _tickSpacing = 100;
-
-        uint64 cursor = startBlock_;
-        for (uint256 i; i < _stepsData.length; i += 8) {
-            uint24 mps;
-            uint40 blockDelta;
-            assembly {
-                let packed := shr(192, mload(add(add(_stepsData, 0x20), i)))
-                mps := shr(40, packed)
-                blockDelta := and(packed, 0xFFFFFFFFFF)
-            }
-            _mps.push(mps);
-            _starts.push(cursor);
-            uint64 end = cursor + uint64(blockDelta);
-            _ends.push(end);
-            cursor = end;
-        }
-    }
-
-    function pointer() external view returns (address) {
-        return _pointer;
-    }
-
-    function startBlock() external view returns (uint64) {
-        return _startBlock;
-    }
-
-    function step() external view returns (AuctionStep memory) {
-        for (uint256 i; i < _starts.length; i++) {
-            if (block.number >= _starts[i] && block.number < _ends[i]) {
-                return AuctionStep({mps: _mps[i], startBlock: _starts[i], endBlock: _ends[i]});
-            }
-        }
-        uint256 last = _starts.length - 1;
-        return AuctionStep({mps: _mps[last], startBlock: _starts[last], endBlock: _ends[last]});
-    }
-
-    function floorPrice() external view returns (uint256) {
-        return _floorPrice;
-    }
-
-    function tickSpacing() external view returns (uint256) {
-        return _tickSpacing;
-    }
-
-    function setFloorPrice(uint256 fp) external {
-        _floorPrice = fp;
-    }
-
-    function setTickSpacing(uint256 ts) external {
-        _tickSpacing = ts;
-    }
-}
-
-contract StaleMockCCA {
-    address private _pointer;
-    uint64 private _startBlock;
-
-    uint24[] private _mps;
-    uint64[] private _starts;
-    uint64[] private _ends;
-    uint256 private _currentIdx;
-
-    constructor(bytes memory _stepsData, uint64 startBlock_) {
-        _pointer = SSTORE2.write(_stepsData);
-        _startBlock = startBlock_;
-
-        uint64 cursor = startBlock_;
-        for (uint256 i; i < _stepsData.length; i += 8) {
-            uint24 mps;
-            uint40 blockDelta;
-            assembly {
-                let packed := shr(192, mload(add(add(_stepsData, 0x20), i)))
-                mps := shr(40, packed)
-                blockDelta := and(packed, 0xFFFFFFFFFF)
-            }
-            _mps.push(mps);
-            _starts.push(cursor);
-            uint64 end = cursor + uint64(blockDelta);
-            _ends.push(end);
-            cursor = end;
-        }
-    }
-
-    function pointer() external view returns (address) {
-        return _pointer;
-    }
-
-    function startBlock() external view returns (uint64) {
-        return _startBlock;
-    }
-
-    function step() external view returns (AuctionStep memory) {
-        return AuctionStep({mps: _mps[_currentIdx], startBlock: _starts[_currentIdx], endBlock: _ends[_currentIdx]});
-    }
-
-    function advanceStep() external {
-        if (_currentIdx + 1 < _starts.length) _currentIdx++;
-    }
-
-    function floorPrice() external pure returns (uint256) {
-        return 1000;
-    }
-
-    function tickSpacing() external pure returns (uint256) {
-        return 100;
-    }
-}
-
-contract UmiaValidationHookTest is Test {
-    UmiaValidationHook hook;
-    Reclaim reclaim;
-    MockCCA mockCCA;
-
-    address admin = makeAddr("admin");
-    address user = makeAddr("user");
-
-    uint256 constant WITNESS_PRIVATE_KEY = 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef;
-    address witnessAddress;
-
-    uint256 constant SIGNER_PRIVATE_KEY = 0xaabbccdd00112233445566778899aabb00112233445566778899aabbccddeeff;
-    address signerAddress;
-
-    bytes32 constant PROVIDER_HASH_1 = 0xc9e2404b50af02ddd8797e218f19b0b2a896cdcd9dbf9ea525b89db2fa37de76;
-    bytes32 constant PROVIDER_HASH_2 = 0xaabbccdd00112233445566778899aabbccddeeff00112233445566778899aabb;
-    bytes32 constant PROVIDER_HASH_3 = 0x1122334455667788990011223344556677889900112233445566778899001122;
-
-    uint64 step0Start = 100;
-    uint64 step0End = 200;
-
-    function _packStep(uint24 mps, uint40 blockDelta) internal pure returns (bytes memory) {
-        return abi.encodePacked(mps, blockDelta);
-    }
-
-    function _emptyHashes() internal pure returns (bytes32[] memory) {
-        return new bytes32[](0);
-    }
-
-    function _emptyIds() internal pure returns (string[] memory) {
-        return new string[](0);
-    }
-
-    function _singleHash(bytes32 h) internal pure returns (bytes32[] memory arr) {
-        arr = new bytes32[](1);
-        arr[0] = h;
-    }
-
-    function _singleId(string memory id) internal pure returns (string[] memory arr) {
-        arr = new string[](1);
-        arr[0] = id;
-    }
-
-    function _twoHashes(bytes32 h1, bytes32 h2) internal pure returns (bytes32[] memory arr) {
-        arr = new bytes32[](2);
-        arr[0] = h1;
-        arr[1] = h2;
-    }
-
-    function _twoIds(string memory id1, string memory id2) internal pure returns (string[] memory arr) {
-        arr = new string[](2);
-        arr[0] = id1;
-        arr[1] = id2;
-    }
-
-    function _deploySingleStepCCA() internal returns (MockCCA) {
-        bytes memory data = _packStep(10_000_000, uint40(step0End - step0Start));
-        return new MockCCA(data, step0Start);
-    }
-
-    function _deployTwoStepCCA() internal returns (MockCCA) {
-        bytes memory data = abi.encodePacked(
-            _packStep(5_000_000, 100), // step 0: blocks 100-200
-            _packStep(5_000_000, 100) // step 1: blocks 200-300
-        );
-        return new MockCCA(data, 100);
-    }
-
-    function _deployThreeStepCCA() internal returns (MockCCA) {
-        bytes memory data = abi.encodePacked(
-            _packStep(5_000_000, 100), // step 0: blocks 100-200
-            _packStep(5_000_000, 100), // step 1: blocks 200-300
-            _packStep(5_000_000, 100) // step 2: blocks 300-400
-        );
-        return new MockCCA(data, 100);
-    }
-
-    function _deployThreeStepHook() internal returns (UmiaValidationHook hook2) {
-        hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
-        MockCCA cca2 = _deployThreeStepCCA();
-
-        vm.prank(admin);
-        hook2.setCCA(address(cca2));
-    }
-
-    function _createProofForUser(address _user) internal view returns (bytes memory) {
-        return _createProofForUserWithProvider(_user, PROVIDER_HASH_1);
-    }
-
-    function _createProofForUserWithProvider(address _user, bytes32 _providerHash)
-        internal
-        view
-        returns (bytes memory)
-    {
-        string memory context = string(
-            abi.encodePacked(
-                '{"contextAddress":"',
-                _addressToString(_user),
-                '","providerHash":"',
-                _bytes32ToHexString(_providerHash),
-                '"}'
-            )
-        );
-
-        Claims.ClaimInfo memory claimInfo =
-            Claims.ClaimInfo({provider: "test-provider", parameters: "test-params", context: context});
-
-        bytes32 identifier = Claims.hashClaimInfo(claimInfo);
-
-        Claims.CompleteClaimData memory claimData = Claims.CompleteClaimData({
-            identifier: identifier, owner: _user, timestampS: uint32(block.timestamp), epoch: 2
-        });
-
-        bytes memory serialised = abi.encodePacked(
-            _bytes2str(abi.encodePacked(claimData.identifier)),
-            "\n",
-            _address2str(claimData.owner),
-            "\n",
-            _uint2str(claimData.timestampS),
-            "\n",
-            _uint2str(claimData.epoch)
-        );
-
-        bytes32 messageHash =
-            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n", _uint2str(serialised.length), serialised));
-
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(WITNESS_PRIVATE_KEY, messageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
-
-        bytes[] memory signatures = new bytes[](1);
-        signatures[0] = signature;
-
-        Claims.SignedClaim memory signedClaim = Claims.SignedClaim({claim: claimData, signatures: signatures});
-
-        Reclaim.Proof memory proof = Reclaim.Proof({claimInfo: claimInfo, signedClaim: signedClaim});
-
-        return abi.encode(proof);
-    }
-
-    function _createProofForUserWithWrongContext(address _user, address _wrongUser)
-        internal
-        view
-        returns (bytes memory)
-    {
-        string memory context = string(
-            abi.encodePacked('{"contextAddress":"', _addressToString(_wrongUser), '","providerHash":"0x1234"}')
-        );
-
-        Claims.ClaimInfo memory claimInfo =
-            Claims.ClaimInfo({provider: "test-provider", parameters: "test-params", context: context});
-
-        bytes32 identifier = Claims.hashClaimInfo(claimInfo);
-
-        Claims.CompleteClaimData memory claimData = Claims.CompleteClaimData({
-            identifier: identifier, owner: _user, timestampS: uint32(block.timestamp), epoch: 2
-        });
-
-        bytes memory serialised = abi.encodePacked(
-            _bytes2str(abi.encodePacked(claimData.identifier)),
-            "\n",
-            _address2str(claimData.owner),
-            "\n",
-            _uint2str(claimData.timestampS),
-            "\n",
-            _uint2str(claimData.epoch)
-        );
-
-        bytes32 messageHash =
-            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n", _uint2str(serialised.length), serialised));
-
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(WITNESS_PRIVATE_KEY, messageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
-
-        bytes[] memory signatures = new bytes[](1);
-        signatures[0] = signature;
-
-        Claims.SignedClaim memory signedClaim = Claims.SignedClaim({claim: claimData, signatures: signatures});
-
-        Reclaim.Proof memory proof = Reclaim.Proof({claimInfo: claimInfo, signedClaim: signedClaim});
-
-        return abi.encode(proof);
-    }
-
-    function _signServerPermit(address hookAddr, address wallet, uint256 stepIdx, bytes32 nonce, uint256 deadline)
-        internal
-        view
-        returns (bytes memory)
-    {
-        return _signServerPermitWithAmount(hookAddr, wallet, stepIdx, nonce, deadline, 0);
-    }
-
-    function _signServerPermitWithAmount(
-        address hookAddr,
-        address wallet,
-        uint256 stepIdx,
-        bytes32 nonce,
-        uint256 deadline,
-        uint128 amount
-    ) internal view returns (bytes memory) {
-        bytes32 DOMAIN_TYPEHASH = keccak256(
-            "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
-        );
-        bytes32 SERVER_PERMIT_TYPEHASH =
-            keccak256("ServerPermit(address wallet,uint256 step,bytes32 nonce,uint256 deadline,uint128 amount)");
-        bytes32 domainSeparator = keccak256(
-            abi.encode(DOMAIN_TYPEHASH, keccak256("UmiaValidationHook"), keccak256("1"), block.chainid, hookAddr)
-        );
-        bytes32 structHash = keccak256(abi.encode(SERVER_PERMIT_TYPEHASH, wallet, stepIdx, nonce, deadline, amount));
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(SIGNER_PRIVATE_KEY, digest);
-        return abi.encodePacked(r, s, v);
-    }
-
-    function _encodePermitHookData(uint256 stepIdx, bytes32 nonce, uint256 deadline, bytes memory signature)
-        internal
-        pure
-        returns (bytes memory)
-    {
-        return abi.encodePacked(uint8(0x01), abi.encode(stepIdx, nonce, deadline, signature));
-    }
-
-    function setUp() public {
-        witnessAddress = vm.addr(WITNESS_PRIVATE_KEY);
-        signerAddress = vm.addr(SIGNER_PRIVATE_KEY);
-
-        reclaim = new Reclaim();
-        Reclaim.Witness[] memory witnesses = new Reclaim.Witness[](1);
-        witnesses[0] = Reclaim.Witness({addr: witnessAddress, host: "wss://test.example.com"});
-        reclaim.addNewEpoch(witnesses, 1);
-
-        hook = new UmiaValidationHook(admin, address(reclaim), address(0));
-        mockCCA = _deploySingleStepCCA();
-
-        vm.startPrank(admin);
-        hook.setCCA(address(mockCCA));
-        hook.enableStep(0, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
-        vm.stopPrank();
-    }
-
+contract UmiaValidationHookTest is UmiaValidationHookBase {
     // ============ Pre-verification Flow ============
 
     function test_validate_robinhoodGateUsesL2Block() public {
@@ -391,7 +28,8 @@ contract UmiaValidationHookTest is Test {
         vm.etch(arbSys, address(new MockArbSys()).code);
         MockArbSys(arbSys).setArbBlockNumber(step0Start);
         vm.roll(1); // Ancestor height is before the auction, but L2 is in its gated step.
-        UmiaValidationHook nitroHook = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook nitroHook = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         vm.startPrank(admin);
         nitroHook.setCCA(address(mockCCA));
         nitroHook.enableStep(0, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
@@ -406,114 +44,14 @@ contract UmiaValidationHookTest is Test {
         nitroHook.validate(0, 1, user, user, bytes(""));
     }
 
-    function test_submitProof_succeeds() public {
+    function test_validate_inline_emitsProofVerified() public {
         bytes memory proofData = _createProofForUser(user);
-
-        hook.submitProof(user, 0, proofData);
-
-        assertTrue(hook.isVerified(0, user));
-    }
-
-    function test_submitProof_emitsEvent() public {
-        bytes memory proofData = _createProofForUser(user);
-
-        vm.expectEmit(true, true, false, false);
-        emit UmiaValidationHook.ProofVerified(user, 0, bytes32(0));
-        hook.submitProof(user, 0, proofData);
-    }
-
-    function test_submitProof_thenValidate_succeeds() public {
-        bytes memory proofData = _createProofForUser(user);
-
-        hook.submitProof(user, 0, proofData);
 
         vm.roll(step0Start);
-        vm.prank(hook.cca());
-        hook.validate(0, 0, user, user, bytes(""));
-    }
-
-    function test_submitProof_zeroAddress_reverts() public {
-        bytes memory proofData = _createProofForUser(user);
-
-        vm.expectRevert(UmiaValidationHook.ZeroAddress.selector);
-        hook.submitProof(address(0), 0, proofData);
-    }
-
-    function test_submitProof_stepOutOfBounds_reverts() public {
-        bytes memory proofData = _createProofForUser(user);
-
-        vm.expectRevert(abi.encodeWithSelector(UmiaValidationHook.StepIndexOutOfBounds.selector, 5));
-        hook.submitProof(user, 5, proofData);
-    }
-
-    function test_submitProof_noCCA_reverts() public {
-        UmiaValidationHook freshHook = new UmiaValidationHook(admin, address(reclaim), address(0));
-        bytes memory proofData = _createProofForUser(user);
-
-        vm.expectRevert(UmiaValidationHook.NoCCA.selector);
-        freshHook.submitProof(user, 0, proofData);
-    }
-
-    function test_submitProof_permissionless_succeeds() public {
-        bytes memory proofData = _createProofForUser(user);
-
-        vm.prank(user);
-        hook.submitProof(user, 0, proofData);
-
-        assertTrue(hook.isVerified(0, user));
-    }
-
-    function test_submitProof_contextAddressMismatch_reverts() public {
-        address wrongUser = makeAddr("wrongUser");
-        bytes memory proofData = _createProofForUserWithWrongContext(user, wrongUser);
-
-        vm.expectRevert(abi.encodeWithSelector(UmiaValidationHook.ContextAddressMismatch.selector, user, wrongUser));
-        hook.submitProof(user, 0, proofData);
-    }
-
-    function test_submitProofBatch_succeeds() public {
-        address user2 = makeAddr("user2");
-        address[] memory users = new address[](2);
-        users[0] = user;
-        users[1] = user2;
-
-        bytes[] memory proofs = new bytes[](2);
-        proofs[0] = _createProofForUser(user);
-        proofs[1] = _createProofForUser(user2);
-
-        hook.submitProofBatch(users, 0, proofs);
-
-        assertTrue(hook.isVerified(0, user));
-        assertTrue(hook.isVerified(0, user2));
-    }
-
-    function test_submitProofBatch_arrayLengthMismatch_reverts() public {
-        address[] memory users = new address[](2);
-        users[0] = user;
-        users[1] = makeAddr("user2");
-
-        bytes[] memory proofs = new bytes[](1);
-        proofs[0] = _createProofForUser(user);
-
-        vm.expectRevert(UmiaValidationHook.ArrayLengthMismatch.selector);
-        hook.submitProofBatch(users, 0, proofs);
-    }
-
-    function test_submitProofBatch_permissionless() public {
-        address user2 = makeAddr("user2");
-        address[] memory users = new address[](2);
-        users[0] = user;
-        users[1] = user2;
-
-        bytes[] memory proofs = new bytes[](2);
-        proofs[0] = _createProofForUser(user);
-        proofs[1] = _createProofForUser(user2);
-
-        vm.prank(user);
-        hook.submitProofBatch(users, 0, proofs);
-
-        assertTrue(hook.isVerified(0, user));
-        assertTrue(hook.isVerified(0, user2));
+        vm.prank(address(mockCCA));
+        vm.expectEmit(true, true, false, false);
+        emit UmiaValidationHook.ProofVerified(user, 0, bytes32(0));
+        hook.validate(0, 0, user, user, abi.encodePacked(uint256(0), proofData));
     }
 
     // ============ Inline Verification Flow ============
@@ -556,7 +94,8 @@ contract UmiaValidationHookTest is Test {
     // ============ Inline Verification — Monotonic Step Prefix ============
 
     function test_validate_inline_monotonic_differentProviders_succeeds() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -565,7 +104,7 @@ contract UmiaValidationHookTest is Test {
         hook2.enableStep(1, _singleHash(PROVIDER_HASH_2), _singleId("test-provider-2"));
         vm.stopPrank();
 
-        bytes memory proofData = _createProofForUser(user);
+        bytes memory proofData = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2));
         bytes memory hookData = abi.encodePacked(uint256(0), proofData);
 
         vm.roll(200); // step 1 — different providers, but proofStep=0 targets step 0's providers
@@ -577,7 +116,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_inline_futureStep_reverts() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -596,7 +136,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_inline_monotonic_alreadyVerified_shortCircuits() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -605,8 +146,8 @@ contract UmiaValidationHookTest is Test {
         hook2.enableStep(1, _singleHash(PROVIDER_HASH_2), _singleId("test-provider-2"));
         vm.stopPrank();
 
-        bytes memory proofData = _createProofForUser(user);
-        hook2.submitProof(user, 0, proofData);
+        bytes memory proofData = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2));
+        _register(hook2, user, 0, proofData);
 
         vm.roll(200); // step 1 — already verified from step 0, hookData not needed
         vm.prank(hook2.cca());
@@ -614,7 +155,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_inline_stepPrefixed_storesLowestStep() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -624,7 +166,7 @@ contract UmiaValidationHookTest is Test {
         vm.stopPrank();
 
         // First: inline at step 1 with PROVIDER_HASH_2 proof
-        bytes memory proofStep1 = _createProofForUserWithProvider(user, PROVIDER_HASH_2);
+        bytes memory proofStep1 = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_2, address(cca2));
         bytes memory hookData1 = abi.encodePacked(uint256(1), proofStep1);
         vm.roll(200);
         vm.prank(hook2.cca());
@@ -633,7 +175,7 @@ contract UmiaValidationHookTest is Test {
         assertFalse(hook2.isVerified(0, user));
 
         // Second: inline at step 0 with PROVIDER_HASH_1 proof — lowers the stored step
-        bytes memory proofStep0 = _createProofForUserWithProvider(user, PROVIDER_HASH_1);
+        bytes memory proofStep0 = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2));
         bytes memory hookData0 = abi.encodePacked(uint256(0), proofStep0);
         vm.roll(100);
         vm.prank(hook2.cca());
@@ -642,7 +184,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_permitOnlyStep_rejectsProofWithServerPermitRequired() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -665,7 +208,8 @@ contract UmiaValidationHookTest is Test {
     // ============ Inline Verification — Extended Edge Cases ============
 
     function test_validate_inline_threeStepSkip_succeeds() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployThreeStepCCA();
 
         vm.startPrank(admin);
@@ -675,7 +219,7 @@ contract UmiaValidationHookTest is Test {
         hook2.enableStep(2, _singleHash(PROVIDER_HASH_3), _singleId("provider-3"));
         vm.stopPrank();
 
-        bytes memory proofData = _createProofForUserWithProvider(user, PROVIDER_HASH_1);
+        bytes memory proofData = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2));
         bytes memory hookData = abi.encodePacked(uint256(0), proofData);
 
         vm.roll(300); // step 2 — proof targets step 0, skipping step 1 entirely
@@ -688,7 +232,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_inline_outOfBoundsProofStep_reverts() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -715,7 +260,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_permitOnly_truncatedPermit_reverts() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -732,7 +278,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_permitOnly_truncatedSignatureTail_reverts() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -754,7 +301,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_permitOnly_hugeSignatureLength_reverts() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -775,7 +323,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_bothGates_emptyHookData_reverts() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -792,7 +341,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_inline_step0_withAllStepsEnabled() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployThreeStepCCA();
 
         vm.startPrank(admin);
@@ -802,7 +352,7 @@ contract UmiaValidationHookTest is Test {
         hook2.enableStep(2, _singleHash(PROVIDER_HASH_3), _singleId("provider-3"));
         vm.stopPrank();
 
-        bytes memory proofData = _createProofForUserWithProvider(user, PROVIDER_HASH_1);
+        bytes memory proofData = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2));
         bytes memory hookData = abi.encodePacked(uint256(0), proofData);
 
         // Inline at step 0 — proofStep=0, currentStep=0, exact boundary
@@ -822,38 +372,10 @@ contract UmiaValidationHookTest is Test {
         hook2.validate(0, 0, user, user, bytes(""));
     }
 
-    function test_validate_inline_monotonic_thenPreRegister_keepsLowest() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
-        MockCCA cca2 = _deployThreeStepCCA();
-
-        vm.startPrank(admin);
-        hook2.setCCA(address(cca2));
-        hook2.enableStep(0, _singleHash(PROVIDER_HASH_1), _singleId("provider-1"));
-        hook2.enableStep(1, _singleHash(PROVIDER_HASH_2), _singleId("provider-2"));
-        hook2.enableStep(2, _singleHash(PROVIDER_HASH_3), _singleId("provider-3"));
-        vm.stopPrank();
-
-        // Inline at step 2 with step 2's provider
-        bytes memory proof2 = _createProofForUserWithProvider(user, PROVIDER_HASH_3);
-        bytes memory hookData2 = abi.encodePacked(uint256(2), proof2);
-        vm.roll(300);
-        vm.prank(hook2.cca());
-        hook2.validate(0, 0, user, user, hookData2);
-        assertTrue(hook2.isVerified(2, user));
-        assertFalse(hook2.isVerified(1, user));
-        assertFalse(hook2.isVerified(0, user));
-
-        // Pre-register at step 0 via submitProof — should lower stored step
-        bytes memory proof0 = _createProofForUserWithProvider(user, PROVIDER_HASH_1);
-        hook2.submitProof(user, 0, proof0);
-        assertTrue(hook2.isVerified(0, user));
-        assertTrue(hook2.isVerified(1, user));
-        assertTrue(hook2.isVerified(2, user));
-    }
-
     function test_validate_inline_secondUserIndependent() public {
         address user2 = makeAddr("user2");
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -863,7 +385,7 @@ contract UmiaValidationHookTest is Test {
         vm.stopPrank();
 
         // User1 verifies at step 0 inline
-        bytes memory proof1 = _createProofForUserWithProvider(user, PROVIDER_HASH_1);
+        bytes memory proof1 = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2));
         bytes memory hookData1 = abi.encodePacked(uint256(0), proof1);
         vm.roll(100);
         vm.prank(hook2.cca());
@@ -876,7 +398,7 @@ contract UmiaValidationHookTest is Test {
         hook2.validate(0, 0, user2, user2, bytes(""));
 
         // User2 verifies at step 1 inline with step 1's provider
-        bytes memory proof2 = _createProofForUserWithProvider(user2, PROVIDER_HASH_2);
+        bytes memory proof2 = _createProofForUserWithProviderAndAuction(user2, PROVIDER_HASH_2, address(cca2));
         bytes memory hookData2 = abi.encodePacked(uint256(1), proof2);
         vm.prank(hook2.cca());
         hook2.validate(0, 0, user2, user2, hookData2);
@@ -890,7 +412,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_inline_proofStepEqualsCurrentStep_boundaryCheck() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployThreeStepCCA();
 
         vm.startPrank(admin);
@@ -901,7 +424,7 @@ contract UmiaValidationHookTest is Test {
         vm.stopPrank();
 
         // proofStep == currentStep at each step boundary
-        bytes memory proof0 = _createProofForUserWithProvider(user, PROVIDER_HASH_2);
+        bytes memory proof0 = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_2, address(cca2));
         bytes memory hookData = abi.encodePacked(uint256(1), proof0);
 
         vm.roll(200); // step 1: proofStep=1 == currentStep=1
@@ -922,27 +445,27 @@ contract UmiaValidationHookTest is Test {
 
     function test_validate_inEnabledStep_whenVerified_succeeds() public {
         bytes memory proofData = _createProofForUser(user);
-        hook.submitProof(user, 0, proofData);
+        _register(hook, user, 0, proofData);
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
         hook.validate(0, 0, user, user, bytes(""));
     }
 
-    function test_validate_inEnabledStep_whenSenderDiffers_reverts() public {
+    function test_validate_inEnabledStep_whenSenderDiffers_succeeds() public {
         address other = makeAddr("other");
 
         bytes memory proofData = _createProofForUser(user);
-        hook.submitProof(user, 0, proofData);
+        _register(hook, user, 0, proofData);
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
-        vm.expectRevert(UmiaValidationHook.SenderNotBidOwner.selector);
         hook.validate(0, 0, user, other, bytes(""));
     }
 
     function test_validate_inEnabledStep_verifiedForLaterStep_reverts() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -950,10 +473,10 @@ contract UmiaValidationHookTest is Test {
         hook2.enableStep(0, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
         hook2.enableStep(1, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
 
-        bytes memory proofData = _createProofForUser(user);
+        bytes memory proofData = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2));
         vm.stopPrank();
 
-        hook2.submitProof(user, 1, proofData);
+        _register(hook2, user, 1, proofData);
 
         vm.roll(100);
         vm.prank(hook2.cca());
@@ -962,7 +485,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_inEnabledStep_verifiedForCorrectStep_succeeds() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -970,8 +494,8 @@ contract UmiaValidationHookTest is Test {
         hook2.enableStep(1, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
         vm.stopPrank();
 
-        bytes memory proofData = _createProofForUser(user);
-        hook2.submitProof(user, 1, proofData);
+        bytes memory proofData = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2));
+        _register(hook2, user, 1, proofData);
 
         vm.roll(200);
         vm.prank(hook2.cca());
@@ -981,7 +505,8 @@ contract UmiaValidationHookTest is Test {
     // ============ Validate — Monotonic Verification ============
 
     function test_validate_monotonic_verifiedAtStep0_passesStep1() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -990,8 +515,8 @@ contract UmiaValidationHookTest is Test {
         hook2.enableStep(1, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
         vm.stopPrank();
 
-        bytes memory proofData = _createProofForUser(user);
-        hook2.submitProof(user, 0, proofData);
+        bytes memory proofData = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2));
+        _register(hook2, user, 0, proofData);
 
         vm.roll(100);
         vm.prank(hook2.cca());
@@ -1003,7 +528,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_monotonic_verifiedAtStep1_failsStep0() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -1012,8 +538,8 @@ contract UmiaValidationHookTest is Test {
         hook2.enableStep(1, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
         vm.stopPrank();
 
-        bytes memory proofData = _createProofForUser(user);
-        hook2.submitProof(user, 1, proofData);
+        bytes memory proofData = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2));
+        _register(hook2, user, 1, proofData);
 
         vm.roll(200);
         vm.prank(hook2.cca());
@@ -1025,10 +551,30 @@ contract UmiaValidationHookTest is Test {
         hook2.validate(0, 0, user, user, bytes(""));
     }
 
+    function test_validate_monotonic_laterProofKeepsEarlierRegistration() public {
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
+        MockCCA cca2 = _deployTwoStepCCA();
+
+        vm.startPrank(admin);
+        hook2.setCCA(address(cca2));
+        hook2.enableStep(0, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
+        hook2.enableStep(1, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
+        vm.stopPrank();
+
+        bytes memory proofData = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2));
+        _register(hook2, user, 0, proofData);
+        // A registered owner's hookData is ignored, so a step-1 proof cannot move the registration later.
+        _register(hook2, user, 1, proofData);
+
+        assertTrue(hook2.isVerified(0, user), "registration must stay dated to step 0");
+    }
+
     // ============ Validate — Disabled Step ============
 
     function test_validate_inDisabledStep_allowsAnyone() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.prank(admin);
@@ -1039,10 +585,11 @@ contract UmiaValidationHookTest is Test {
         hook2.validate(0, 0, user, user, bytes(""));
     }
 
-    function test_validate_inDisabledStep_revertsDifferentSender() public {
+    function test_validate_inDisabledStep_allowsDifferentSender() public {
         address other = makeAddr("other");
 
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.prank(admin);
@@ -1050,7 +597,6 @@ contract UmiaValidationHookTest is Test {
 
         vm.roll(step0Start);
         vm.prank(hook2.cca());
-        vm.expectRevert(UmiaValidationHook.SenderNotBidOwner.selector);
         hook2.validate(0, 0, user, other, bytes(""));
     }
 
@@ -1062,16 +608,16 @@ contract UmiaValidationHookTest is Test {
         hook.validate(0, 0, user, user, bytes(""));
     }
 
-    function test_validate_outsideSteps_revertsDifferentSender() public {
+    function test_validate_outsideSteps_allowsDifferentSender() public {
         address other = makeAddr("other");
         vm.roll(step0End);
         vm.prank(hook.cca());
-        vm.expectRevert(UmiaValidationHook.SenderNotBidOwner.selector);
         hook.validate(0, 0, user, other, bytes(""));
     }
 
     function test_validate_noCCA_allowsAnyone() public {
-        UmiaValidationHook freshHook = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         freshHook.validate(0, 0, user, user, bytes(""));
     }
 
@@ -1085,7 +631,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_setCCA_emitsEvent() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.expectEmit(true, false, false, false);
@@ -1095,7 +642,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_setCCA_zeroAddress_reverts() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
 
         vm.prank(admin);
         vm.expectRevert(UmiaValidationHook.ZeroAddress.selector);
@@ -1112,7 +660,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_setCCA_nonOwner_reverts() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.prank(user);
@@ -1123,7 +672,8 @@ contract UmiaValidationHookTest is Test {
     // ============ enableStep / disableStep ============
 
     function test_enableStep_succeeds() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -1137,7 +687,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_enableStep_emitsEvent() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -1156,7 +707,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_enableStep_noCCA_reverts() public {
-        UmiaValidationHook freshHook = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
 
         vm.prank(admin);
         vm.expectRevert(UmiaValidationHook.NoCCA.selector);
@@ -1193,7 +745,8 @@ contract UmiaValidationHookTest is Test {
     // ============ enableStepBatch / disableStepBatch ============
 
     function test_enableStepBatch_succeeds() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -1216,7 +769,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_disableStepBatch_succeeds() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -1259,7 +813,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_setStepProviders_noCCA_reverts() public {
-        UmiaValidationHook freshHook = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
 
         vm.prank(admin);
         vm.expectRevert(UmiaValidationHook.NoCCA.selector);
@@ -1323,7 +878,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_addStepProviders_acrossSteps() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -1386,7 +942,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_addStepProviders_noCCA_reverts() public {
-        UmiaValidationHook freshHook = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
 
         uint256[] memory steps = new uint256[](1);
         steps[0] = 0;
@@ -1397,7 +954,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_setStepProvidersBatch_succeeds() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -1480,20 +1038,23 @@ contract UmiaValidationHookTest is Test {
         hook.validate(0, 0, user, user, hookData);
     }
 
-    function test_submitProof_withWrongProviderHash_reverts() public {
+    function test_validate_inline_wrongProviderHash_reverts() public {
         vm.prank(admin);
         hook.setStepProviders(0, _singleHash(PROVIDER_HASH_1), _singleId("provider-1"));
 
         bytes memory proofData = _createProofForUserWithProvider(user, PROVIDER_HASH_2);
 
+        vm.roll(step0Start);
+        vm.prank(address(mockCCA));
         vm.expectRevert(
             abi.encodeWithSelector(UmiaValidationHook.ProviderHashMismatch.selector, PROVIDER_HASH_1, PROVIDER_HASH_2)
         );
-        hook.submitProof(user, 0, proofData);
+        hook.validate(0, 0, user, user, abi.encodePacked(uint256(0), proofData));
     }
 
     function test_validate_differentStepsDifferentProviders() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -1504,7 +1065,7 @@ contract UmiaValidationHookTest is Test {
         hook2.setStepProviders(1, _singleHash(PROVIDER_HASH_2), _singleId("provider-2"));
         vm.stopPrank();
 
-        bytes memory proofForStep0 = _createProofForUserWithProvider(user, PROVIDER_HASH_1);
+        bytes memory proofForStep0 = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2));
         bytes memory hookData = abi.encodePacked(uint256(0), proofForStep0);
 
         vm.roll(100);
@@ -1547,7 +1108,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_enableStep_emptyProviders_noPermit_isOpen() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -1575,7 +1137,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_isVerified_isMonotonic() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -1584,15 +1147,16 @@ contract UmiaValidationHookTest is Test {
         hook2.enableStep(1, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
         vm.stopPrank();
 
-        bytes memory proofData = _createProofForUser(user);
-        hook2.submitProof(user, 0, proofData);
+        bytes memory proofData = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2));
+        _register(hook2, user, 0, proofData);
 
         assertTrue(hook2.isVerified(0, user));
         assertTrue(hook2.isVerified(1, user));
     }
 
     function test_isVerified_notEligibleForEarlierSteps() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -1601,8 +1165,8 @@ contract UmiaValidationHookTest is Test {
         hook2.enableStep(1, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
         vm.stopPrank();
 
-        bytes memory proofData = _createProofForUser(user);
-        hook2.submitProof(user, 1, proofData);
+        bytes memory proofData = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2));
+        _register(hook2, user, 1, proofData);
 
         assertFalse(hook2.isVerified(0, user));
         assertTrue(hook2.isVerified(1, user));
@@ -1616,14 +1180,16 @@ contract UmiaValidationHookTest is Test {
         assertTrue(hook.supportsInterface(type(IUmiaValidationHook).interfaceId));
         assertTrue(hook.supportsInterface(type(IMaxBidPriceValidationHook).interfaceId));
         assertTrue(hook.supportsInterface(type(IGatedValidationHook).interfaceId));
+        assertTrue(hook.supportsInterface(type(IVerifyEveryBidHook).interfaceId));
     }
 
     /// @dev Integrators discover the hook by these IDs, so a change to any of these interfaces
     ///      must be a deliberate one: update the constants here and the tables in docs/contracts.
     function test_supportsInterface_idsAreStable() public pure {
-        assertEq(type(IUmiaValidationHook).interfaceId, bytes4(0xbff343b3));
+        assertEq(type(IUmiaValidationHook).interfaceId, bytes4(0x5084080f));
         assertEq(type(IMaxBidPriceValidationHook).interfaceId, bytes4(0x2268a4c3));
         assertEq(type(IGatedValidationHook).interfaceId, bytes4(0x6d417064));
+        assertEq(type(IVerifyEveryBidHook).interfaceId, bytes4(0x98e51cb6));
     }
 
     /// @dev Our local declaration is only useful while its ID matches the one their UI probes.
@@ -1679,7 +1245,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_expirationBlock_zeroBeforeSetCCA() public {
-        UmiaValidationHook freshHook = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
 
         assertEq(freshHook.expirationBlock(), 0);
     }
@@ -1755,16 +1322,9 @@ contract UmiaValidationHookTest is Test {
 
     // ============ Stale Step Fallback ============
 
-    function _deployStaleTwoStepCCA() internal returns (StaleMockCCA) {
-        bytes memory data = abi.encodePacked(
-            _packStep(5_000_000, 100), // step 0: blocks 100-200
-            _packStep(5_000_000, 100) // step 1: blocks 200-300
-        );
-        return new StaleMockCCA(data, 100);
-    }
-
     function test_validate_staleStep_enforcesNextStepVerification() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook h = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         StaleMockCCA cca = _deployStaleTwoStepCCA();
 
         vm.startPrank(admin);
@@ -1772,8 +1332,8 @@ contract UmiaValidationHookTest is Test {
         h.enableStep(1, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
         vm.stopPrank();
 
-        bytes memory proofData = _createProofForUser(user);
-        h.submitProof(user, 1, proofData);
+        bytes memory proofData = _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca));
+        _register(h, user, 1, proofData);
 
         vm.roll(200);
         vm.prank(h.cca());
@@ -1781,7 +1341,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_staleStep_revertsUnverified() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook h = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         StaleMockCCA cca = _deployStaleTwoStepCCA();
 
         vm.startPrank(admin);
@@ -1796,7 +1357,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_staleStep_pastAllStepsAllowsAnyone() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook h = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         StaleMockCCA cca = _deployStaleTwoStepCCA();
 
         vm.startPrank(admin);
@@ -1814,7 +1376,7 @@ contract UmiaValidationHookTest is Test {
 
     function test_unregister_succeeds() public {
         bytes memory proofData = _createProofForUser(user);
-        hook.submitProof(user, 0, proofData);
+        _register(hook, user, 0, proofData);
         assertTrue(hook.isVerified(0, user));
 
         vm.prank(admin);
@@ -1824,7 +1386,7 @@ contract UmiaValidationHookTest is Test {
 
     function test_unregister_emitsEvent() public {
         bytes memory proofData = _createProofForUser(user);
-        hook.submitProof(user, 0, proofData);
+        _register(hook, user, 0, proofData);
 
         vm.expectEmit(true, false, false, false);
         emit UmiaValidationHook.Unregistered(user);
@@ -1833,7 +1395,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_unregister_noCCA_reverts() public {
-        UmiaValidationHook freshHook = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
 
         vm.prank(admin);
         vm.expectRevert(UmiaValidationHook.NoCCA.selector);
@@ -1852,11 +1415,8 @@ contract UmiaValidationHookTest is Test {
         users[0] = user;
         users[1] = user2;
 
-        bytes[] memory proofs = new bytes[](2);
-        proofs[0] = _createProofForUser(user);
-        proofs[1] = _createProofForUser(user2);
-
-        hook.submitProofBatch(users, 0, proofs);
+        _register(hook, user, 0, _createProofForUser(user));
+        _register(hook, user2, 0, _createProofForUser(user2));
         assertTrue(hook.isVerified(0, user));
         assertTrue(hook.isVerified(0, user2));
 
@@ -1873,11 +1433,8 @@ contract UmiaValidationHookTest is Test {
         users[0] = user;
         users[1] = user2;
 
-        bytes[] memory proofs = new bytes[](2);
-        proofs[0] = _createProofForUser(user);
-        proofs[1] = _createProofForUser(user2);
-
-        hook.submitProofBatch(users, 0, proofs);
+        _register(hook, user, 0, _createProofForUser(user));
+        _register(hook, user2, 0, _createProofForUser(user2));
 
         vm.expectEmit(true, false, false, false);
         emit UmiaValidationHook.Unregistered(user);
@@ -1888,7 +1445,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_unregisterBatch_noCCA_reverts() public {
-        UmiaValidationHook freshHook = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         address[] memory users = new address[](1);
         users[0] = user;
 
@@ -1909,7 +1467,7 @@ contract UmiaValidationHookTest is Test {
     function test_unregister_clearsVerification() public {
         bytes memory proofData = _createProofForUser(user);
 
-        hook.submitProof(user, 0, proofData);
+        _register(hook, user, 0, proofData);
         assertTrue(hook.isVerified(0, user));
 
         vm.prank(admin);
@@ -1956,7 +1514,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_removeStepProviders_acrossSteps() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -2063,7 +1622,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_removeStepProviders_noCCA_reverts() public {
-        UmiaValidationHook freshHook = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
 
         uint256[] memory steps = new uint256[](1);
         steps[0] = 0;
@@ -2106,7 +1666,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_enableStep_emitsRemovedForReplacedProviders() public {
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -2121,17 +1682,6 @@ contract UmiaValidationHookTest is Test {
 
     // ============ Server Permit — Signer Management ============
 
-    function _setupServerPermit() internal returns (UmiaValidationHook h) {
-        h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
-        MockCCA cca2 = _deploySingleStepCCA();
-
-        vm.startPrank(admin);
-        h.setCCA(address(cca2));
-        h.enableStep(0, _emptyHashes(), _emptyIds());
-        h.enableStepPermit(0);
-        vm.stopPrank();
-    }
-
     function test_setSigner_succeeds() public {
         vm.prank(admin);
         hook.setSigner(signerAddress);
@@ -2141,7 +1691,7 @@ contract UmiaValidationHookTest is Test {
 
     function test_setSigner_emitsEvent() public {
         vm.expectEmit(true, true, false, false);
-        emit UmiaValidationHook.SignerSet(address(0), signerAddress);
+        emit HookServerPermits.SignerSet(address(0), signerAddress);
         vm.prank(admin);
         hook.setSigner(signerAddress);
     }
@@ -2193,7 +1743,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_enableStepPermit_noCCA_reverts() public {
-        UmiaValidationHook freshHook = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
 
         vm.prank(admin);
         vm.expectRevert(UmiaValidationHook.NoCCA.selector);
@@ -2266,7 +1817,7 @@ contract UmiaValidationHookTest is Test {
 
         vm.roll(step0Start);
         vm.prank(h.cca());
-        vm.expectRevert(UmiaValidationHook.InvalidSignature.selector);
+        vm.expectRevert(HookServerPermits.InvalidSignature.selector);
         h.validate(0, 2 ether, user, user, hookData);
 
         assertFalse(h.isPermitNonceUsed(nonce));
@@ -2285,7 +1836,7 @@ contract UmiaValidationHookTest is Test {
         h.validate(0, 0, user, user, hookData);
         vm.prank(h.cca());
 
-        vm.expectRevert(abi.encodeWithSelector(UmiaValidationHook.PermitAlreadyUsed.selector, nonce));
+        vm.expectRevert(abi.encodeWithSelector(HookServerPermits.PermitAlreadyUsed.selector, nonce));
         h.validate(0, 0, user, user, hookData);
     }
 
@@ -2319,7 +1870,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_inlineServerPermit_monotonic_succeeds() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -2343,7 +1895,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_inlineServerPermit_permitStepTooHigh_reverts() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -2366,7 +1919,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_bareStepAfterPermitStep_isOpen() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -2394,7 +1948,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_inlineServerPermit_notEnabled_reverts() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -2416,7 +1971,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_providerOnlyStep_rejectsPermitWithProofRequired() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -2438,7 +1994,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_bothGates_typeBytePicksCredential() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -2459,14 +2016,15 @@ contract UmiaValidationHookTest is Test {
 
         // non-0x01 -> proof path: a valid matching proof passes.
         address bidder2 = makeAddr("both-gates-bidder2");
-        bytes memory proofData = _createProofForUserWithProvider(bidder2, PROVIDER_HASH_1);
+        bytes memory proofData = _createProofForUserWithProviderAndAuction(bidder2, PROVIDER_HASH_1, address(cca2));
         vm.prank(h.cca());
         h.validate(0, 0, bidder2, bidder2, abi.encodePacked(uint256(0), proofData));
         assertTrue(h.isVerified(0, bidder2));
     }
 
     function test_validate_inlineServerPermit_signerNotSet_reverts() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook h = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -2482,7 +2040,7 @@ contract UmiaValidationHookTest is Test {
 
         vm.roll(step0Start);
         vm.prank(h.cca());
-        vm.expectRevert(UmiaValidationHook.SignerNotSet.selector);
+        vm.expectRevert(HookServerPermits.SignerNotSet.selector);
         h.validate(0, 0, user, user, hookData);
     }
 
@@ -2510,7 +2068,7 @@ contract UmiaValidationHookTest is Test {
 
         vm.roll(step0Start);
         vm.prank(h.cca());
-        vm.expectRevert(UmiaValidationHook.InvalidSignature.selector);
+        vm.expectRevert(HookServerPermits.InvalidSignature.selector);
         h.validate(0, 0, user, user, hookData);
     }
 
@@ -2525,7 +2083,7 @@ contract UmiaValidationHookTest is Test {
 
         vm.roll(step0Start);
         vm.prank(hookB.cca());
-        vm.expectRevert(UmiaValidationHook.InvalidSignature.selector);
+        vm.expectRevert(HookServerPermits.InvalidSignature.selector);
         hookB.validate(0, 0, user, user, hookData);
 
         vm.prank(hookA.cca());
@@ -2545,7 +2103,7 @@ contract UmiaValidationHookTest is Test {
 
         vm.roll(step0Start);
         vm.prank(h.cca());
-        vm.expectRevert(UmiaValidationHook.InvalidSignature.selector);
+        vm.expectRevert(HookServerPermits.InvalidSignature.selector);
         h.validate(0, 0, user, user, hookData);
     }
 
@@ -2559,11 +2117,11 @@ contract UmiaValidationHookTest is Test {
 
         vm.roll(step0Start);
         vm.prank(h.cca());
-        vm.expectRevert(UmiaValidationHook.ExpiredDeadline.selector);
+        vm.expectRevert(HookServerPermits.ExpiredDeadline.selector);
         h.validate(0, 0, user, user, hookData);
     }
 
-    function test_validate_reclaimFallback_rejectsWithoutProviders() public {
+    function test_validate_proofOnPermitOnlyStep_rejected() public {
         UmiaValidationHook h = _setupServerPermit();
 
         bytes memory proofData = _createProofForUser(user);
@@ -2578,83 +2136,6 @@ contract UmiaValidationHookTest is Test {
     }
 
     // ============ Helper Functions ============
-
-    function _addressToString(address _addr) internal pure returns (string memory) {
-        bytes memory alphabet = "0123456789abcdef";
-        bytes memory str = new bytes(42);
-        str[0] = "0";
-        str[1] = "x";
-        for (uint256 i = 0; i < 20; i++) {
-            str[2 + i * 2] = alphabet[uint256(uint8(bytes20(_addr)[i] >> 4))];
-            str[3 + i * 2] = alphabet[uint256(uint8(bytes20(_addr)[i] & 0x0f))];
-        }
-        return string(str);
-    }
-
-    function _bytes2str(bytes memory buffer) internal pure returns (string memory) {
-        bytes memory alphabet = "0123456789abcdef";
-        bytes memory str = new bytes(2 + buffer.length * 2);
-        str[0] = "0";
-        str[1] = "x";
-        for (uint256 i = 0; i < buffer.length; i++) {
-            str[2 + i * 2] = alphabet[uint8(buffer[i] >> 4)];
-            str[3 + i * 2] = alphabet[uint8(buffer[i] & 0x0f)];
-        }
-        return string(str);
-    }
-
-    function _address2str(address x) internal pure returns (string memory) {
-        bytes memory s = new bytes(42);
-        s[0] = "0";
-        s[1] = "x";
-        for (uint256 i = 0; i < 20; i++) {
-            bytes1 b = bytes1(uint8(uint256(uint160(x)) / (2 ** (8 * (19 - i)))));
-            bytes1 hi = bytes1(uint8(b) / 16);
-            bytes1 lo = bytes1(uint8(b) - 16 * uint8(hi));
-            s[2 + 2 * i] = _char(hi);
-            s[3 + 2 * i] = _char(lo);
-        }
-        return string(s);
-    }
-
-    function _char(bytes1 b) internal pure returns (bytes1 c) {
-        if (uint8(b) < 10) return bytes1(uint8(b) + 0x30);
-        else return bytes1(uint8(b) + 0x57);
-    }
-
-    function _uint2str(uint256 _i) internal pure returns (string memory) {
-        if (_i == 0) {
-            return "0";
-        }
-        uint256 j = _i;
-        uint256 len;
-        while (j != 0) {
-            len++;
-            j /= 10;
-        }
-        bytes memory bstr = new bytes(len);
-        uint256 k = len;
-        while (_i != 0) {
-            k = k - 1;
-            uint8 temp = (48 + uint8(_i - (_i / 10) * 10));
-            bytes1 b1 = bytes1(temp);
-            bstr[k] = b1;
-            _i /= 10;
-        }
-        return string(bstr);
-    }
-
-    function _bytes32ToHexString(bytes32 _data) internal pure returns (string memory) {
-        bytes memory alphabet = "0123456789abcdef";
-        bytes memory str = new bytes(66);
-        str[0] = "0";
-        str[1] = "x";
-        for (uint256 i = 0; i < 32; i++) {
-            str[2 + i * 2] = alphabet[uint8(_data[i] >> 4)];
-            str[3 + i * 2] = alphabet[uint8(_data[i] & 0x0f)];
-        }
-        return string(str);
-    }
 
     // ─────────────────────────────────────────────────────────
     // Max Bid Price Tests — setMaxBidPrice
@@ -2694,7 +2175,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_setMaxBidPrice_noCCAReverts() public {
-        UmiaValidationHook freshHook = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         assertEq(freshHook.maxBidPrice(), 0, "fresh hook cap should be 0");
         vm.prank(admin);
         vm.expectRevert(UmiaValidationHook.NoCCA.selector);
@@ -2771,7 +2253,8 @@ contract UmiaValidationHookTest is Test {
         cca2.setFloorPrice(500);
         cca2.setTickSpacing(250);
 
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         vm.startPrank(admin);
         h.setCCA(address(cca2));
         h.enableStep(0, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
@@ -3032,7 +2515,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_capRevertsBeforeVerificationCheck() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -3051,7 +2535,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_belowCapStillNeedsVerification() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -3068,7 +2553,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_permitUnderPriceCapSucceeds() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -3093,7 +2579,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_permitAtPriceCapSucceeds() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -3118,7 +2605,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_permitAbovePriceCapReverts_nonceNotBurned() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -3167,116 +2655,58 @@ contract UmiaValidationHookTest is Test {
 
     // ============ Sybil resistance (OPRF identity) ============
 
-    function _createProofWithIdentity(address _user, bytes32 _providerHash, string memory _extractedParameters)
-        internal
-        view
-        returns (bytes memory)
-    {
-        string memory context = string(
-            abi.encodePacked(
-                '{"contextAddress":"',
-                _addressToString(_user),
-                '","providerHash":"',
-                _bytes32ToHexString(_providerHash),
-                '","extractedParameters":',
-                _extractedParameters,
-                "}"
-            )
-        );
-
-        Claims.ClaimInfo memory claimInfo =
-            Claims.ClaimInfo({provider: "test-provider", parameters: "test-params", context: context});
-
-        bytes32 identifier = Claims.hashClaimInfo(claimInfo);
-
-        Claims.CompleteClaimData memory claimData = Claims.CompleteClaimData({
-            identifier: identifier, owner: _user, timestampS: uint32(block.timestamp), epoch: 2
-        });
-
-        bytes memory serialised = abi.encodePacked(
-            _bytes2str(abi.encodePacked(claimData.identifier)),
-            "\n",
-            _address2str(claimData.owner),
-            "\n",
-            _uint2str(claimData.timestampS),
-            "\n",
-            _uint2str(claimData.epoch)
-        );
-
-        bytes32 messageHash =
-            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n", _uint2str(serialised.length), serialised));
-
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(WITNESS_PRIVATE_KEY, messageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
-
-        bytes[] memory signatures = new bytes[](1);
-        signatures[0] = signature;
-
-        Claims.SignedClaim memory signedClaim = Claims.SignedClaim({claim: claimData, signatures: signatures});
-        Reclaim.Proof memory proof = Reclaim.Proof({claimInfo: claimInfo, signedClaim: signedClaim});
-
-        return abi.encode(proof);
-    }
-
-    function _expectedIdentityHash(bytes32 providerHash, string memory extractedParameters)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return keccak256(abi.encodePacked(providerHash, bytes(extractedParameters)));
-    }
-
-    function test_submitProof_sybil_rejectedForDifferentWallet() public {
+    function test_inlineRegistration_sybil_rejectedForDifferentWallet() public {
         string memory params = '{"username":"sybil-test"}';
         bytes memory proofA = _createProofWithIdentity(user, PROVIDER_HASH_1, params);
-        hook.submitProof(user, 0, proofA);
+        _register(hook, user, 0, proofA);
 
         address user2 = makeAddr("user2");
         bytes memory proofB = _createProofWithIdentity(user2, PROVIDER_HASH_1, params);
 
         bytes32 identityHash = _expectedIdentityHash(PROVIDER_HASH_1, params);
+        vm.prank(address(mockCCA));
         vm.expectRevert(
             abi.encodeWithSelector(
                 UmiaValidationHook.IdentityAlreadyClaimed.selector, PROVIDER_HASH_1, identityHash, user
             )
         );
-        hook.submitProof(user2, 0, proofB);
+        hook.validate(0, 0, user2, user2, abi.encodePacked(uint256(0), proofB));
     }
 
-    function test_submitProof_sybil_sameUserReverifySucceeds() public {
+    function test_inlineRegistration_sybil_sameUserReregistersAfterUnregister() public {
         string memory params = '{"username":"sybil-test"}';
         bytes memory proofA = _createProofWithIdentity(user, PROVIDER_HASH_1, params);
 
-        hook.submitProof(user, 0, proofA);
-        // Idempotent: re-submitting the same proof for the same user must not revert.
-        // Same-identity owner == user → no-op in the gate; reclaim's "already used" guard
-        // is the one we want to hit, not IdentityAlreadyClaimed.
-        vm.expectRevert(); // Reclaim rejects already-verified proof; not a sybil revert.
-        hook.submitProof(user, 0, proofA);
+        _register(hook, user, 0, proofA);
+        vm.prank(admin);
+        hook.unregister(user);
+        // The identity slot still belongs to the same wallet, so its proof registers it again.
+        _register(hook, user, 0, proofA);
+        assertTrue(hook.isVerified(0, user));
     }
 
-    function test_submitProof_sybil_differentIdentitiesAllowed() public {
+    function test_inlineRegistration_sybil_differentIdentitiesAllowed() public {
         bytes memory proofA = _createProofWithIdentity(user, PROVIDER_HASH_1, '{"username":"alice"}');
-        hook.submitProof(user, 0, proofA);
+        _register(hook, user, 0, proofA);
 
         address user2 = makeAddr("user2");
         bytes memory proofB = _createProofWithIdentity(user2, PROVIDER_HASH_1, '{"username":"bob"}');
-        hook.submitProof(user2, 0, proofB);
+        _register(hook, user2, 0, proofB);
 
         assertTrue(hook.isVerified(0, user));
         assertTrue(hook.isVerified(0, user2));
     }
 
-    function test_submitProof_sybil_providerHashNamespaceIsolation() public {
+    function test_inlineRegistration_sybil_identityProviderIsolation() public {
         string memory params = '{"username":"shared"}';
 
         // Hook A has PROVIDER_HASH_1 enabled at step 0.
         bytes memory proofA = _createProofWithIdentity(user, PROVIDER_HASH_1, params);
-        hook.submitProof(user, 0, proofA);
+        _register(hook, user, 0, proofA);
 
-        // A second hook keyed to PROVIDER_HASH_2 should accept the same identity bytes
-        // because the providerHash prefix in the hash makes them distinct.
-        UmiaValidationHook hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        // The distinct identity-provider namespace keeps independent accounts separate.
+        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
         vm.startPrank(admin);
         hook2.setCCA(address(cca2));
@@ -3284,68 +2714,142 @@ contract UmiaValidationHookTest is Test {
         vm.stopPrank();
 
         address user2 = makeAddr("user2");
-        bytes memory proofB = _createProofWithIdentity(user2, PROVIDER_HASH_2, params);
-        hook2.submitProof(user2, 0, proofB);
+        bytes memory proofB = _createProofWithIdentityForAuction(user2, PROVIDER_HASH_2, params, address(cca2));
+        _register(hook2, user2, 0, proofB);
         assertTrue(hook2.isVerified(0, user2));
     }
 
-    function test_submitProof_sybil_missingExtractedParametersAllowed() public {
-        // Falls back to the legacy proof helper which doesn't include extractedParameters.
-        bytes memory proofData = _createProofForUser(user);
-        hook.submitProof(user, 0, proofData);
+    function test_inlineRegistration_sybil_emptyExtractedParametersRejected() public {
+        vm.roll(step0Start);
+        string[13] memory emptyObjects = [
+            string("{}"),
+            "{ }",
+            "{\t\n\r }",
+            '{"account":""}',
+            '{"account":" "}',
+            '{"account":"\\t\\n"}',
+            '{"account":"\\u0020"}',
+            '{"account":"\\u00a0"}',
+            string(bytes.concat(bytes('{"account":"'), hex"c2a0", bytes('"}'))),
+            '{"account":"valid","other":""}',
+            '{"account":null}',
+            '{"account":123}',
+            '{"account":[]}'
+        ];
+        for (uint256 i; i < emptyObjects.length; ++i) {
+            bytes memory proofData = _createProofWithIdentity(user, PROVIDER_HASH_1, emptyObjects[i]);
+            vm.prank(address(mockCCA));
+            vm.expectRevert(UmiaValidationHook.EmptyIdentityParameters.selector);
+            hook.validate(0, 0, user, user, abi.encodePacked(uint256(0), proofData));
+        }
+    }
+
+    function test_inlineRegistration_sybil_multipleNonEmptyIdentityValuesAccepted() public {
+        string memory params = string(bytes.concat(bytes('{"account":"'), hex"c3a9", bytes('","other":"b"}')));
+        _register(hook, user, 0, _createProofWithIdentity(user, PROVIDER_HASH_1, params));
         assertTrue(hook.isVerified(0, user));
     }
 
-    function test_submitProof_sybil_emitsIdentityClaimedEvent() public {
+    function test_inlineRegistration_sybil_crossRecipeSameNamespace() public {
+        vm.prank(admin);
+        hook.setStepProviders(0, _twoHashes(PROVIDER_HASH_1, PROVIDER_HASH_3), _twoIds("github-one", "github-two"));
+        string memory params = '{"account":"stable-private-id"}';
+        _register(hook, user, 0, _createProofWithIdentity(user, PROVIDER_HASH_1, params));
+        bytes32 identityKey = _expectedIdentityHash(PROVIDER_HASH_1, params);
+        assertEq(identityKey, 0xb10940d6eb3daf10fd2314c89fcacd69790663f230f45f3da441518d34e14ae4);
+        assertEq(identityKey, _expectedIdentityHash(PROVIDER_HASH_3, params));
+
+        address secondWallet = makeAddr("secondWallet");
+        vm.prank(address(mockCCA));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UmiaValidationHook.IdentityAlreadyClaimed.selector, PROVIDER_HASH_3, identityKey, user
+            )
+        );
+        hook.validate(
+            0,
+            0,
+            secondWallet,
+            secondWallet,
+            abi.encodePacked(uint256(0), _createProofWithIdentity(secondWallet, PROVIDER_HASH_3, params))
+        );
+
+        vm.prank(admin);
+        hook.unregister(user);
+        _register(hook, user, 0, _createProofWithIdentity(user, PROVIDER_HASH_3, params));
+        assertEq(hook.identityOwner(identityKey), user);
+    }
+
+    function test_identityProvider_assignmentCannotChange() public {
+        vm.prank(admin);
+        hook.setIdentityProvider(PROVIDER_HASH_1, "github");
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(UmiaValidationHook.IdentityProviderImmutable.selector, PROVIDER_HASH_1));
+        hook.setIdentityProvider(PROVIDER_HASH_1, "other");
+    }
+
+    function test_identityProvider_signedNamespaceMustMatchAssignment() public {
+        UmiaValidationHook other = new UmiaValidationHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
+        MockCCA auction = _deploySingleStepCCA();
+        vm.startPrank(admin);
+        other.setIdentityProvider(PROVIDER_HASH_1, "other");
+        other.setCCA(address(auction));
+        other.enableStep(0, _singleHash(PROVIDER_HASH_1), _singleId("github"));
+        vm.stopPrank();
+        bytes memory proofData =
+            _createProofWithIdentityForAuction(user, PROVIDER_HASH_1, '{"account":"private"}', address(auction));
+        vm.roll(step0Start);
+        vm.prank(address(auction));
+        vm.expectRevert(abi.encodeWithSelector(UmiaValidationHook.IdentityProviderMismatch.selector, PROVIDER_HASH_1));
+        other.validate(0, 0, user, user, abi.encodePacked(uint256(0), proofData));
+    }
+
+    function test_inlineRegistration_sybil_emitsIdentityClaimedEvent() public {
         string memory params = '{"username":"alice"}';
         bytes memory proofA = _createProofWithIdentity(user, PROVIDER_HASH_1, params);
 
         bytes32 identityHash = _expectedIdentityHash(PROVIDER_HASH_1, params);
+        vm.roll(step0Start);
+        vm.prank(address(mockCCA));
         vm.expectEmit(true, true, true, true);
         emit UmiaValidationHook.IdentityClaimed(user, PROVIDER_HASH_1, identityHash, 0);
-        hook.submitProof(user, 0, proofA);
+        hook.validate(0, 0, user, user, abi.encodePacked(uint256(0), proofA));
     }
 
     function test_clearIdentity_ownerOnly() public {
         bytes32 identityHash = _expectedIdentityHash(PROVIDER_HASH_1, '{"username":"x"}');
         vm.expectRevert();
-        hook.clearIdentity(PROVIDER_HASH_1, identityHash);
+        hook.clearIdentity(identityHash);
 
         vm.prank(admin);
-        hook.clearIdentity(PROVIDER_HASH_1, identityHash);
+        hook.clearIdentity(identityHash);
         // No revert from owner; idempotent on a never-claimed slot.
     }
 
     function test_clearIdentity_allowsReRegistration() public {
         string memory params = '{"username":"alice"}';
         bytes memory proofA = _createProofWithIdentity(user, PROVIDER_HASH_1, params);
-        hook.submitProof(user, 0, proofA);
+        _register(hook, user, 0, proofA);
 
         bytes32 identityHash = _expectedIdentityHash(PROVIDER_HASH_1, params);
-        assertEq(hook.identityOwner(PROVIDER_HASH_1, identityHash), user);
+        assertEq(hook.identityOwner(identityHash), user);
 
         vm.prank(admin);
-        hook.clearIdentity(PROVIDER_HASH_1, identityHash);
-        assertEq(hook.identityOwner(PROVIDER_HASH_1, identityHash), address(0));
+        hook.clearIdentity(identityHash);
+        assertEq(hook.identityOwner(identityHash), address(0));
 
         address user2 = makeAddr("user2");
         bytes memory proofB = _createProofWithIdentity(user2, PROVIDER_HASH_1, params);
-        hook.submitProof(user2, 0, proofB);
+        _register(hook, user2, 0, proofB);
 
-        assertEq(hook.identityOwner(PROVIDER_HASH_1, identityHash), user2);
+        assertEq(hook.identityOwner(identityHash), user2);
         assertTrue(hook.isVerified(0, user2));
     }
 
     // ─────────────────────────────────────────────────────────
     // Per-Step zkTLS Bid Amount Cap — setStepMaxBidAmount config
     // ─────────────────────────────────────────────────────────
-
-    uint256 constant ZK_CAP = 1_000e6; // 1,000 USDC, money-token base units
-
-    /// @dev Builds inline-proof hookData: abi.encodePacked(uint256 proofStep, abi.encode(Reclaim.Proof)).
-    function _inlineProof(uint256 proofStep, address _user) internal view returns (bytes memory) {
-        return abi.encodePacked(proofStep, _createProofForUser(_user));
-    }
 
     function test_setStepMaxBidAmount_storesValue() public {
         assertEq(hook.stepMaxBidAmount(0), 0, "initial cap should be 0");
@@ -3378,7 +2882,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_setStepMaxBidAmount_noCCAReverts() public {
-        UmiaValidationHook freshHook = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         vm.prank(admin);
         vm.expectRevert(UmiaValidationHook.NoCCA.selector);
         freshHook.setStepMaxBidAmount(0, ZK_CAP);
@@ -3409,7 +2914,7 @@ contract UmiaValidationHookTest is Test {
     function test_zkCap_accumulatesAcrossBids_exceedReverts() public {
         vm.prank(admin);
         hook.setStepMaxBidAmount(0, ZK_CAP);
-        hook.submitProof(user, 0, _createProofForUser(user));
+        _register(hook, user, 0, _createProofForUser(user));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
@@ -3427,7 +2932,7 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_zkCap_noCapAllowsAnyAmount_noAccrual() public {
-        hook.submitProof(user, 0, _createProofForUser(user));
+        _register(hook, user, 0, _createProofForUser(user));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
@@ -3451,7 +2956,7 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_zkCap_capAddedMidStream_onlyCountsSubsequentBids() public {
-        hook.submitProof(user, 0, _createProofForUser(user));
+        _register(hook, user, 0, _createProofForUser(user));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
@@ -3475,8 +2980,8 @@ contract UmiaValidationHookTest is Test {
         address user2 = makeAddr("user2");
         vm.prank(admin);
         hook.setStepMaxBidAmount(0, ZK_CAP);
-        hook.submitProof(user, 0, _createProofForUser(user));
-        hook.submitProof(user2, 0, _createProofForUser(user2));
+        _register(hook, user, 0, _createProofForUser(user));
+        _register(hook, user2, 0, _createProofForUser(user2));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
@@ -3488,7 +2993,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_zkCap_perStepBudgetsIndependent_monotonicVerification() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook h = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
         vm.startPrank(admin);
@@ -3499,7 +3005,7 @@ contract UmiaValidationHookTest is Test {
         h.setStepMaxBidAmount(1, 500e6);
         vm.stopPrank();
 
-        h.submitProof(user, 0, _createProofForUser(user)); // verified from step 0, monotonic
+        _register(h, user, 0, _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2))); // verified from step 0, monotonic
 
         // Step 0: fill its budget to the cap.
         vm.roll(100);
@@ -3522,7 +3028,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_zkCap_permitPathUnaffectedByZkCap() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -3551,8 +3058,6 @@ contract UmiaValidationHookTest is Test {
     // ─────────────────────────────────────────────────────────
     // Auction-Wide zkTLS Bid Volume Cap — setZkGlobalMaxBidAmount config
     // ─────────────────────────────────────────────────────────
-
-    uint256 constant ZK_GLOBAL_CAP = 2_000e6; // 2,000 USDC, money-token base units
 
     function test_setZkGlobalMaxBidAmount_storesValue() public {
         assertEq(hook.zkGlobalMaxBidAmount(), 0, "initial cap should be 0");
@@ -3584,7 +3089,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_setZkGlobalMaxBidAmount_settableBeforeCCA() public {
-        UmiaValidationHook freshHook = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        vm.warp(block.timestamp + 1);
         vm.prank(admin);
         freshHook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP);
         assertEq(freshHook.zkGlobalMaxBidAmount(), ZK_GLOBAL_CAP, "cap should be configurable before pairing");
@@ -3598,8 +3104,8 @@ contract UmiaValidationHookTest is Test {
         address user2 = makeAddr("user2");
         vm.prank(admin);
         hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP);
-        hook.submitProof(user, 0, _createProofForUser(user));
-        hook.submitProof(user2, 0, _createProofForUser(user2));
+        _register(hook, user, 0, _createProofForUser(user));
+        _register(hook, user2, 0, _createProofForUser(user2));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
@@ -3619,7 +3125,7 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_zkGlobalCap_accruesWhileUncapped_capCountsHistory() public {
-        hook.submitProof(user, 0, _createProofForUser(user));
+        _register(hook, user, 0, _createProofForUser(user));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
@@ -3646,7 +3152,7 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_zkGlobalCap_emitsAccrualEvent() public {
-        hook.submitProof(user, 0, _createProofForUser(user));
+        _register(hook, user, 0, _createProofForUser(user));
         vm.roll(step0Start);
 
         vm.expectEmit(true, false, false, true);
@@ -3683,7 +3189,7 @@ contract UmiaValidationHookTest is Test {
         hook.setStepMaxBidAmount(0, ZK_CAP);
         hook.setZkGlobalMaxBidAmount(ZK_CAP - 1);
         vm.stopPrank();
-        hook.submitProof(user, 0, _createProofForUser(user));
+        _register(hook, user, 0, _createProofForUser(user));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
@@ -3698,7 +3204,7 @@ contract UmiaValidationHookTest is Test {
         hook.setStepMaxBidAmount(0, ZK_CAP);
         hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP);
         vm.stopPrank();
-        hook.submitProof(user, 0, _createProofForUser(user));
+        _register(hook, user, 0, _createProofForUser(user));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
@@ -3710,7 +3216,8 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_zkGlobalCap_permitPathNotCounted() public {
-        UmiaValidationHook h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
         vm.startPrank(admin);
@@ -3734,6 +3241,105 @@ contract UmiaValidationHookTest is Test {
         assertEq(h.zkGlobalBidTotal(), 0, "permit bids must not accrue into the global zk total");
     }
 
+    function test_zkGlobalCap_verifiedWalletRequiresPermitOnLaterPermitOnlyStep() public {
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
+        MockCCA cca2 = _deployTwoStepCCA();
+
+        vm.startPrank(admin);
+        h.setCCA(address(cca2));
+        h.enableStep(0, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
+        h.enableStepPermit(0);
+        h.enableStep(1, _emptyHashes(), _emptyIds());
+        h.enableStepPermit(1);
+        h.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP);
+        vm.stopPrank();
+
+        _register(h, user, 0, _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2)));
+        vm.roll(step0Start);
+        vm.prank(h.cca());
+        h.validate(0, uint128(ZK_GLOBAL_CAP), user, user, "");
+        assertEq(h.zkGlobalBidTotal(), ZK_GLOBAL_CAP);
+
+        vm.roll(step0End);
+        vm.prank(h.cca());
+        vm.expectRevert(abi.encodeWithSelector(UmiaValidationHook.ServerPermitRequired.selector, 1));
+        h.validate(0, 500e6, user, user, "");
+
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes32 nonce = keccak256("verified-permit-only");
+        bytes memory signature = _signServerPermitWithAmount(address(h), user, 1, nonce, deadline, 500e6);
+        bytes memory permitData = _encodePermitHookData(1, nonce, deadline, signature);
+
+        vm.prank(h.cca());
+        h.validate(0, 500e6, user, user, permitData);
+        assertTrue(h.isPermitNonceUsed(nonce), "permit must be consumed");
+        assertEq(h.zkGlobalBidTotal(), ZK_GLOBAL_CAP, "permit-only bid must not use the zk budget");
+        assertEq(h.zkBidTotal(user, 1), 0, "permit-only bid must not use the zk step cap");
+
+        vm.prank(h.cca());
+        vm.expectRevert(abi.encodeWithSelector(HookServerPermits.PermitAlreadyUsed.selector, nonce));
+        h.validate(0, 500e6, user, user, permitData);
+    }
+
+    function test_zkGlobalCap_verifiedWalletOnLaterDualGateStillUsesProofCap() public {
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
+        MockCCA cca2 = _deployTwoStepCCA();
+
+        vm.startPrank(admin);
+        h.setCCA(address(cca2));
+        h.enableStep(0, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
+        h.enableStepPermit(0);
+        h.enableStep(1, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
+        h.enableStepPermit(1);
+        h.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP);
+        vm.stopPrank();
+
+        _register(h, user, 0, _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2)));
+        vm.roll(step0Start);
+        vm.prank(h.cca());
+        h.validate(0, uint128(ZK_GLOBAL_CAP), user, user, "");
+
+        vm.roll(step0End);
+        vm.prank(h.cca());
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UmiaValidationHook.ZkBidExceedsGlobalCap.selector, user, ZK_GLOBAL_CAP + 1, ZK_GLOBAL_CAP
+            )
+        );
+        h.validate(0, 1, user, user, "");
+
+        vm.prank(admin);
+        h.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP + 1);
+        vm.prank(h.cca());
+        h.validate(0, 1, user, user, "");
+        assertEq(h.zkGlobalBidTotal(), ZK_GLOBAL_CAP + 1, "later proof-gated bid still accrues globally");
+    }
+
+    function test_zkGlobalCap_verifiedWalletOnEnabledOpenStepDoesNotAccrue() public {
+        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        vm.warp(block.timestamp + 1);
+        MockCCA cca2 = _deployTwoStepCCA();
+
+        vm.startPrank(admin);
+        h.setCCA(address(cca2));
+        h.enableStep(0, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
+        h.enableStep(1, _emptyHashes(), _emptyIds());
+        h.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP);
+        vm.stopPrank();
+
+        _register(h, user, 0, _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca2)));
+        vm.roll(step0Start);
+        vm.prank(h.cca());
+        h.validate(0, uint128(ZK_GLOBAL_CAP), user, user, "");
+
+        vm.roll(step0End);
+        vm.prank(h.cca());
+        h.validate(0, 1, user, user, "");
+        assertEq(h.zkGlobalBidTotal(), ZK_GLOBAL_CAP, "open step must not use the zk budget");
+    }
+
     function test_zkGlobalCap_disabledStepNotCounted() public {
         vm.startPrank(admin);
         hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP);
@@ -3747,7 +3353,7 @@ contract UmiaValidationHookTest is Test {
     }
 
     function test_validate_revertsForNonCCACaller() public {
-        hook.submitProof(user, 0, _createProofForUser(user));
+        _register(hook, user, 0, _createProofForUser(user));
         vm.roll(step0Start);
 
         vm.prank(makeAddr("attacker"));
@@ -3758,7 +3364,7 @@ contract UmiaValidationHookTest is Test {
     function test_zkCap_cannotBeInflatedByNonCCACaller() public {
         vm.prank(admin);
         hook.setStepMaxBidAmount(0, ZK_CAP);
-        hook.submitProof(user, 0, _createProofForUser(user));
+        _register(hook, user, 0, _createProofForUser(user));
         vm.roll(step0Start);
 
         // An attacker calling validate() directly (no funds moved) must not accrue into a
@@ -3783,7 +3389,7 @@ contract UmiaValidationHookTest is Test {
         hook.setStepMaxBidAmount(0, ZK_CAP); // 1,000
         hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP); // 2,000
         vm.stopPrank();
-        hook.submitProof(user, 0, _createProofForUser(user));
+        _register(hook, user, 0, _createProofForUser(user));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
@@ -3814,8 +3420,8 @@ contract UmiaValidationHookTest is Test {
         hook.setStepMaxBidAmount(0, ZK_CAP);
         hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP);
         vm.stopPrank();
-        hook.submitProof(user, 0, _createProofForUser(user));
-        hook.submitProof(user2, 0, _createProofForUser(user2));
+        _register(hook, user, 0, _createProofForUser(user));
+        _register(hook, user2, 0, _createProofForUser(user2));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
@@ -3845,7 +3451,7 @@ contract UmiaValidationHookTest is Test {
         hook.setStepMaxBidAmount(0, ZK_CAP);
         hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP);
         vm.stopPrank();
-        hook.submitProof(user, 0, _createProofForUser(user));
+        _register(hook, user, 0, _createProofForUser(user));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
@@ -3875,8 +3481,8 @@ contract UmiaValidationHookTest is Test {
         hook.setStepMaxBidAmount(0, ZK_CAP);
         hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP); // 2,000
         vm.stopPrank();
-        hook.submitProof(user, 0, _createProofForUser(user));
-        hook.submitProof(user2, 0, _createProofForUser(user2));
+        _register(hook, user, 0, _createProofForUser(user));
+        _register(hook, user2, 0, _createProofForUser(user2));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
@@ -3885,7 +3491,7 @@ contract UmiaValidationHookTest is Test {
         hook.validate(0, uint128(ZK_CAP), user2, user2, ""); // global now exactly at 2,000
 
         address user3 = makeAddr("user3");
-        hook.submitProof(user3, 0, _createProofForUser(user3));
+        _register(hook, user3, 0, _createProofForUser(user3));
         vm.prank(hook.cca());
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -3912,7 +3518,7 @@ contract UmiaValidationHookTest is Test {
         hook.setStepMaxBidAmount(0, ZK_CAP);
         hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP * 2);
         vm.stopPrank();
-        hook.submitProof(user, 0, _createProofForUser(user));
+        _register(hook, user, 0, _createProofForUser(user));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
@@ -3937,7 +3543,7 @@ contract UmiaValidationHookTest is Test {
         hook.setStepMaxBidAmount(0, ZK_CAP);
         hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP * 2);
         vm.stopPrank();
-        hook.submitProof(user, 0, _createProofForUser(user));
+        _register(hook, user, 0, _createProofForUser(user));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());
@@ -3958,7 +3564,7 @@ contract UmiaValidationHookTest is Test {
     function test_capRetune_introducingStepCapMidAuctionIgnoresPriorVolume() public {
         vm.prank(admin);
         hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP * 2);
-        hook.submitProof(user, 0, _createProofForUser(user));
+        _register(hook, user, 0, _createProofForUser(user));
 
         vm.roll(step0Start);
         vm.prank(hook.cca());

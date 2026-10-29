@@ -73,6 +73,7 @@ Versioning rules:
 - `ExecutionPlanV1.version` identifies the plan format.
 - `ActionV1.actionVersion` identifies the action encoding for that action type.
 - The executor MUST reject any version != 1 in v1.
+- A plan holds at most 20 actions (`TooManyActions`).
 
 ## Updating Actions (Guide)
 
@@ -92,8 +93,8 @@ When you want to change a single action’s payload or behavior, prefer incremen
 
 1. **Add a new action version** in the Governance VM implementation.
    - Example: support `UPDATE_MONTHLY_ALLOWANCE` action version `2` while still supporting version `1`.
-2. **Deploy or upgrade the GovernanceExecutor** to include the new action version decoding.
-3. **Update the Hub executor pointer** (default or per‑venture) to the new executor.
+2. **Deploy a new GovernanceExecutor** that decodes the new action version. The executor is not upgradeable; a new version is a new contract.
+3. **The Hub owner points the registry at it**: `setDefaultGovernanceExecutor(executor)`, or `setVentureGovernanceExecutor(ventureId, executor)` for a single venture.
 4. **Frontends encode the new action version** for new proposals; old proposals remain valid.
 
 ### Example pattern (pseudocode)
@@ -134,7 +135,7 @@ enum ActionType {
 ```
 
 New action types MUST be appended at the end. Ordinals are part of the ABI of
-every encoded `ExecutionPlanV1` — reordering or inserting values would silently
+every encoded `ExecutionPlanV1`, so reordering or inserting values would silently
 re-target previously-generated proposal payloads.
 
 ### Action Payloads
@@ -153,7 +154,7 @@ struct MintTokens {
 Rules:
 
 - Only the venture token may be minted.
-- `amount > 0` required.
+- `to != address(0)` and `amount > 0` required.
 
 #### BURN_TOKENS
 
@@ -179,7 +180,7 @@ enum AssetType { NATIVE, ERC20, ERC721, ERC1155 }
 
 struct TransferTreasuryAssets {
     AssetType assetType;
-    address token;   // ignored for NATIVE
+    address token;   // must be address(0) for NATIVE
     address to;
     uint256 amount;  // NATIVE/ERC20/ERC1155
     uint256 tokenId; // ERC721/ERC1155
@@ -191,7 +192,8 @@ Rules:
 
 - `to != address(0)` required.
 - `amount > 0` for NATIVE/ERC20/ERC1155.
-- `tokenId` required for ERC721/ERC1155.
+- `token` must be `address(0)` for NATIVE and non-zero otherwise.
+- `tokenId` selects the ERC721/ERC1155 token.
 
 #### UPDATE_MONTHLY_ALLOWANCE
 
@@ -199,7 +201,7 @@ Updates the monthly allowance amount for a token. Allowance withdrawals are avai
 
 ```solidity
 struct UpdateMonthlyAllowance {
-    address token;   // ERC20 or address(0) for native
+    address token;   // ERC20; address(0) is rejected
     uint256 amount;  // allowance per period
 }
 ```
@@ -230,7 +232,7 @@ Rules:
 - `amount` may be zero (revokes the allowance).
 - Uses `forceApprove` internally for broad ERC20 compatibility.
 - Distinct from `UPDATE_MONTHLY_ALLOWANCE` (the latter is calendar-month team pull allowances with spend tracking).
-- **Standing allowances persist into liquidation and are not auto-revoked.** Before liquidating, a `LIQUIDATE_TREASURY` plan MUST first zero every live allowance with `SET_ALLOWANCE(token, spender, 0)` actions — see [LIQUIDATE_TREASURY](#liquidate_treasury). Enumerate live allowances from the indexed `AllowanceSet(token, spender, amount)` events.
+- **Standing allowances persist into liquidation and are not auto-revoked.** Before liquidating, a `LIQUIDATE_TREASURY` plan MUST first zero every live allowance with `SET_ALLOWANCE(token, spender, 0)` actions (see [LIQUIDATE_TREASURY](#liquidate_treasury)). Enumerate live allowances from the indexed `AllowanceSet(token, spender, amount)` events.
 
 #### SET_ALLOWANCE_SOURCE
 
@@ -256,7 +258,7 @@ Rules (Venture, at execution):
 - Groups never nest in either direction: `underlying` is not itself a registered source, and `source` is not already some other group's underlying (`allowanceSourceCount(source) == 0`).
 - `source != underlying` and the kind bound are the only two rules a pure validator can check, so they are enforced at market creation; the rest surface as an execution-time revert. Rehearse a registration plan on a fork before proposing it.
 - `monthlyAllowance[source].amount == 0`: a token with its own cap cannot join a group until governance zeros that cap.
-- `PEGGED`: both tokens expose `decimals()` (at most 36); one whole unit of `source` is attested to equal one whole unit of `underlying`. This is a governance attestation, not a verified peg.
+- Both tokens expose `decimals()` (at most 36), for either kind. `PEGGED`: one whole unit of `source` is attested to equal one whole unit of `underlying`. This is a governance attestation, not a verified peg.
 - `ERC4626`: `IERC4626(source).asset() == underlying`.
 - Re-registering overwrites; `sourceKind == 0` deletes and emits the previously stored underlying.
 
@@ -299,7 +301,7 @@ Rules:
 
 - Documents are stored in an onchain enumerable mapping.
 - Document IDs start at 1 and increment by 1 per upload.
-- Empty `name` or `uri` MUST revert.
+- Empty `name` or `uri` MUST revert; `name` is at most 256 bytes and `uri` at most 2048.
 
 #### LIQUIDATE_TREASURY
 
@@ -322,17 +324,19 @@ Rules:
 
 - Liquidation is a terminal state: once activated, only liquidation claims are allowed.
 - The `liquidator` address points to an external `ILiquidator` contract that handles the actual distribution strategy (pro-rata, auction, etc.) while assets remain in the Venture treasury.
-- On execution, `GovernanceActions` redeems the venture's spot-LP shares into the treasury, then calls `venture.setLiquidator(liquidator)` and `ILiquidator(liquidator).initialize(venture, assets, claimableSupply)`.
+- On execution, `GovernanceActions` redeems the venture's spot-LP shares in the Hub's current vault and, on a V2 pool, empties its ActiveLiquidityManager (`withdrawAll`) into the treasury, burns every venture token the treasury then holds, then calls `venture.setLiquidator(liquidator)` and `ILiquidator(liquidator).initialize(venture, assets, totalSupply)`.
+- Positions outside the current vault are the plan's job: list them as calls before `LIQUIDATE_TREASURY`, which freezes `executeCall`. That includes V1 vault shares a migrated venture left behind (a donation to the venture after the migration proposal was written, or an under-sized proposal): add `withdraw(shares, 0, 0, venture)` on the V1 vault. Known and accepted; there is no automatic sweep.
 - Token holders call `ILiquidator.claim()` to burn all their venture tokens and receive pro-rata shares of each asset.
-- Claims are proportional to burned venture tokens over the **claimable** supply, which excludes venture tokens held by the treasury itself (redeemed LP + any treasury balance) because those can never claim:
-  - `payout = assetBalance * burnAmount / (totalSupply - treasuryVentureBalance)`
+- Claims are proportional to burned venture tokens over the post-burn total supply. Venture tokens held by the treasury itself (redeemed LP + any treasury balance) can never claim, so they are burned before the snapshot rather than left alive and excluded, where a standing approval could move them into circulation after the snapshot:
+  - `payout = assetBalance * burnAmount / totalSupply`
+- If the treasury held every venture token, nothing circulates after the burn and the action reverts `InvalidParams`.
 - **Do not list the venture token in `assets`.** It is the claim-burn token, not a distributable asset; `SimpleLiquidator` skips it if listed. Paying it back out pro-rata would let a claimant recycle the payout through fresh addresses and over-draw. List the money token (and any other real treasury assets) instead.
 
 ##### Mandatory: revoke standing allowances first
 
-**Liquidation does NOT revoke standing ERC20 allowances.** `setLiquidator` only flips the terminal flag, and afterwards `setAllowance` and the whole executor path are blocked — so a stale approval can never be cleared once liquidation starts. Any spender still holding an allowance (granted via `SET_ALLOWANCE` **or** a raw `CALL` `approve`) can then `transferFrom` treasury assets directly on the token *after* the liquidator snapshots balances, draining assets that back claims and reverting later claimants.
+**Liquidation does NOT revoke standing ERC20 allowances.** `setLiquidator` only flips the terminal flag, and afterwards `setAllowance` and the whole executor path are blocked, so a stale approval can never be cleared once liquidation starts. Any spender still holding an allowance (granted via `SET_ALLOWANCE` **or** a raw `CALL` `approve`) can then `transferFrom` treasury assets directly on the token *after* the liquidator snapshots balances, draining assets that back claims and reverting later claimants.
 
-The liquidation governance plan therefore MUST include a `SET_ALLOWANCE(token, spender, 0)` action for every live allowance, **ordered before** the `LIQUIDATE_TREASURY` action in the same plan. Actions execute in array order (`GovernanceExecutor` loops them sequentially), and `setAllowance` runs while still not liquidating, so the approvals are zeroed before `setLiquidator` runs. Enumerate live allowances from the indexed `AllowanceSet(token, spender, amount)` events (surfaced by the indexer); this is the single source of truth for what to revoke, and covers both `SET_ALLOWANCE`- and `CALL`-created approvals.
+The liquidation governance plan therefore MUST include a `SET_ALLOWANCE(token, spender, 0)` action for every live allowance, **ordered before** the `LIQUIDATE_TREASURY` action in the same plan. Actions execute in array order (`GovernanceExecutor` loops them sequentially), and `setAllowance` runs while still not liquidating, so the approvals are zeroed before `setLiquidator` runs. ERC20 allowances are not enumerable onchain, and the indexed `AllowanceSet(token, spender, amount)` events record only `SET_ALLOWANCE`; a raw `CALL` `approve` emits nothing from the Venture. Build the candidate spenders from `AllowanceSet` events, each claim token's `Approval` logs with the venture as owner, and the protocol's own spenders; read `allowance(venture, spender)` for each and revoke every non-zero one. Include the venture token too, so no spender can move the treasury's venture tokens before the action burns them. A spender set derived from events and known integrations is a starting point, not a guarantee: any spender it misses must be added to the plan by hand, on the claim tokens and the venture token.
 
 Example plan action order:
 
@@ -356,9 +360,9 @@ struct Call {
 
 Rules:
 
-- `target != address(0)` required.
-- Execution MUST use `call` (not `delegatecall`).
-- Reverts MUST bubble.
+- `target != address(0)` and `target != venture` required.
+- Execution MUST use `call` (not `delegatecall`), via `Venture.executeCall`.
+- A failed call reverts the whole plan with `TransferFailed`; the target's revert data is not bubbled.
 - No allowlists are enforced (by design).
 
 #### UPGRADE_IMPLEMENTATION
@@ -382,7 +386,7 @@ Rules:
 ### Access Control
 
 - Only the **current** `UmiaMarketCore` (from `UmiaHub`) MAY call `executeProposal`.
-- Executor is configured per venture, set by the Hub or at venture initialization.
+- The executor is resolved through `UmiaHub.governanceExecutor(venture)`: the Hub owner sets a default (`setDefaultGovernanceExecutor`) and optional per-venture overrides (`setVentureGovernanceExecutor`). `executeProposal` also reverts unless the Hub resolves to this executor and the venture is not liquidating.
 
 ### Atomicity
 
@@ -394,7 +398,9 @@ Rules:
 - Each market should be executable at most once (tracked in `UmiaMarketCore`).
 - The executor MAY emit a `planHash = keccak256(executionPayload)` for indexing.
 
-### Events (recommended)
+### Events
+
+Emitted by `GovernanceExecutor`:
 
 ```solidity
 event GovernancePlanExecuted(
@@ -410,18 +416,23 @@ event GovernanceActionExecuted(
     uint256 indexed proposalId,
     ActionType actionType
 );
+```
 
-event DocumentUploaded(
-    address indexed venture,
-    uint256 indexed docId,
-    string name,
-    string uri
-);
+Emitted by the `Venture` itself (so no `venture` parameter):
 
-event MonthlyAllowanceUpdated(address indexed venture, address indexed token, uint256 amount);
+```solidity
+event DocumentUploaded(uint256 indexed docId, string name, string uri);
+event MonthlyAllowanceUpdated(address indexed token, uint256 amount);
+event AllowanceSet(address indexed token, address indexed spender, uint256 amount);
+event AllowanceSourceSet(address indexed underlying, address indexed source, uint8 kind);
+event LiquidatorAuthorized(address indexed liquidator);
+```
 
-event LiquidationStarted(address indexed venture, uint256 totalSupply, uint256 assetCount);
-event LiquidationClaimed(address indexed venture, address indexed claimer, uint256 burnAmount);
+Emitted by the liquidator (`ILiquidator`):
+
+```solidity
+event Initialized(address indexed venture, uint256 totalSupply, uint256 assetCount);
+event Claimed(address indexed account, uint256 tokenBalance);
 ```
 
 ## Venture Requirements
@@ -436,7 +447,7 @@ The executor must be able to operate on the treasury. Venture MUST provide restr
   - `withdrawERC1155(address token, address to, uint256 tokenId, uint256 amount, bytes data)`
 - `executeCall(address target, uint256 value, bytes data)` for `CALL`
 
-Venture MUST allow calls from the GovernanceExecutor (in addition to Hub/MarketCore).
+Normal treasury mutation on the Venture is restricted to the GovernanceExecutor (`onlyExecutor`). Once liquidation starts, `withdraw*` accept only the `authorizedLiquidator`, which pays out claims, and `burnFrom` (callable only during liquidation) is the liquidator's too. The Hub only sets `minMarketStake`, and the market core never calls the Venture.
 
 Team members MUST be specified at venture deployment time as part of `CreateVentureParams.teamMembers`.
 
@@ -453,7 +464,7 @@ Rules:
 - Periods follow UTC calendar months from `CalendarLib.timestampToMonth(block.timestamp)`.
 - When the computed month changes, `monthlyAllowance[token].spent` resets to `0`.
 - Any team member can withdraw up to `monthlyAllowance[token].amount - monthlyAllowance[token].spent`.
-- Withdrawal uses `TRANSFER_TREASURY_ASSETS` internally or a dedicated function.
+- Withdrawal is a dedicated team-member function, `withdrawMonthlyAllowance(token, to, amount)`, which emits `MonthlyAllowanceWithdrawn(token, to, amount)`.
 
 ### Budget groups
 
@@ -513,12 +524,14 @@ Rules:
 ## Liquidation Mechanics
 
 1. On `LIQUIDATE_TREASURY`, the executor:
-   - Calls `venture.setLiquidator(liquidator)` which sets `liquidationActive = true`
-   - Calls `ILiquidator(liquidator).initialize(venture, assets, totalSupply)` which snapshots total supply and asset balances
+   - Redeems the venture's shares in the Hub's current vault and, on a V2 pool, calls `ActiveLiquidityManager.withdrawAll()`, both through `venture.executeCall`
+   - Burns the treasury's venture-token balance via `venture.burn`
+   - Calls `venture.setLiquidator(liquidator)` which sets `liquidationActive = true` and `authorizedLiquidator`
+   - Calls `ILiquidator(liquidator).initialize(venture, assets, totalSupply)` which snapshots the post-burn supply and asset balances
 2. Token holders call `ILiquidator.claim()`:
-   - Burns all caller's venture tokens via the Venture
-   - Transfers each asset pro rata based on burned amount vs total supply snapshot
-3. After liquidation starts, all governance actions MUST revert (enforced by `whenNotLiquidating` modifier on Venture).
+   - Burns all caller's venture tokens via `venture.burnFrom`
+   - Transfers each asset pro rata based on burned amount vs the claimable-supply snapshot, via `venture.withdraw`
+3. After liquidation starts, all governance actions MUST revert (`GovernanceExecutor.executeProposal` reverts `LiquidationActive`, and the `whenNotLiquidating` modifier guards the Venture).
 
 ## Security Considerations
 
@@ -529,41 +542,6 @@ Rules:
 - All external calls MUST be guarded by checks-effects-interactions.
 - Use `SafeERC20` and ERC721/1155 safe transfer methods where appropriate.
 - Liquidation should be single-shot and irreversible in v1.
-
-## Implementation Checklist
-
-- **GovernanceExecutor**
-  - Decode `ExecutionPlanV1` via `GovernancePayloadValidator` and dispatch actions via `GovernanceActions`.
-  - Enforce access control: only the current `UmiaMarketCore`.
-  - Emit `GovernancePlanExecuted` and `GovernanceActionExecuted`.
-- **GovernancePayloadValidator (library)**
-  - Decode plan version, validate plan structure, enforce LIQUIDATE_TREASURY ordering.
-- **GovernanceActions (library)**
-  - Stateless action validation and dispatch.
-  - Shared helpers for asset transfers and allowance updates.
-- **Venture**
-  - Add executor authorization (alongside Hub/MarketCore).
-  - Add NFT withdrawal helpers:
-    - `withdrawERC721(token, to, tokenId)`
-    - `withdrawERC1155(token, to, tokenId, amount, data)`
-  - Add `executeCall(target, value, data)` for `CALL`.
-  - Add allowance state + period reset logic (team membership registry TBD).
-  - Add document registry storage and events.
-  - Add liquidation state, snapshot, and claim flow.
-- **UmiaMarketCore**
-  - Replace raw `venture.call(executionPayload)` with:
-    - `GovernanceExecutor.executeProposal(venture, marketId, proposalId, executionPayload)`.
-  - Optional: store `planHash` in `WinningProposalExecuted`.
-- **UmiaHub**
-  - Store and expose governance executor address per venture (or global default).
-- **Indexer**
-  - Index document uploads, allowance updates, liquidation events.
-- **Frontend**
-  - Encode `ExecutionPlanV1` from form inputs.
-  - Display structured actions, and warn for `CALL`.
-- **Tests**
-  - Unit tests per action type + failure paths.
-  - End-to-end test: market settle → execute → state changes.
 
 ## Example Payloads
 

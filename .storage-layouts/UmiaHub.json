@@ -163,10 +163,40 @@
       "type": "t_address"
     },
     {
-      "label": "__gap",
+      "label": "spotMigrator",
       "slot": 19,
       "offset": 0,
-      "type": "t_array(t_uint256)50_storage"
+      "type": "t_address"
+    },
+    {
+      "label": "activeLiquidityKeeper",
+      "slot": 20,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "ventureVestingAuthority",
+      "slot": 21,
+      "offset": 0,
+      "type": "t_mapping(t_uint256,t_address)"
+    },
+    {
+      "label": "launchAnchorBps",
+      "slot": 22,
+      "offset": 0,
+      "type": "t_uint16"
+    },
+    {
+      "label": "launchActiveHalfWidthTicks",
+      "slot": 22,
+      "offset": 2,
+      "type": "t_int24"
+    },
+    {
+      "label": "__gap",
+      "slot": 23,
+      "offset": 0,
+      "type": "t_array(t_uint256)46_storage"
     }
   ],
   "types": {
@@ -174,9 +204,9 @@
       "label": "address",
       "numberOfBytes": 20
     },
-    "t_array(t_uint256)50_storage": {
-      "label": "uint256[50]",
-      "numberOfBytes": 1600,
+    "t_array(t_uint256)46_storage": {
+      "label": "uint256[46]",
+      "numberOfBytes": 1472,
       "base": "t_uint256"
     },
     "t_bool": {
@@ -198,6 +228,12 @@
       "numberOfBytes": 32,
       "key": "t_address",
       "value": "t_bool"
+    },
+    "t_mapping(t_uint256,t_address)": {
+      "label": "mapping(uint256 => address)",
+      "numberOfBytes": 32,
+      "key": "t_uint256",
+      "value": "t_address"
     },
     "t_mapping(t_uint256,t_bool)": {
       "label": "mapping(uint256 => bool)",

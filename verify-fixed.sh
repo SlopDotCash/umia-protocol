@@ -6,6 +6,7 @@
 #
 # Usage: ./verify-fixed.sh <address> <path:Name> [constructor-args-hex-no-0x] [extra forge args...]
 set -euo pipefail
+cd "$(dirname "$0")"
 ADDR=$1; FQN=$2; CTOR=${3:-}; shift 2; [ $# -gt 0 ] && shift || true
 SRC=${FQN%%:*}; NAME=${FQN##*:}
 ART="out/$(basename "$SRC")/$NAME.json"

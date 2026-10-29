@@ -22,7 +22,11 @@ library ProtocolState {
         bytes32[] digests;
     }
 
+    /// @dev `UMIA_HUB_ADDRESS` skips the file read, for checkouts without the monorepo's contracts.json.
     function hubFromContractsJson(string memory env, string memory chain) internal view returns (IUmiaHub) {
+        address hubOverride = vm.envOr("UMIA_HUB_ADDRESS", address(0));
+        if (hubOverride != address(0)) return IUmiaHub(hubOverride);
+        require(bytes(env).length != 0 && bytes(chain).length != 0, "set UMIA_ENV and UMIA_CHAIN, or UMIA_HUB_ADDRESS");
         string memory json = vm.readFile("../contracts.json");
         return IUmiaHub(vm.parseJsonAddress(json, string.concat('$["', env, '"]["', chain, '"]["umia"]["hub"]')));
     }

@@ -1,7 +1,4 @@
 .certora_internal
 
-# Local/devnet-only V4 infra deploy artifacts (never a public deployment)
-/broadcast/DeployV4Infra.s.sol/
-
-# forge script simulations (the root .gitignore rule only covers the re-rooted public mirror)
-/broadcast/**/dry-run/
+# forge script artifacts; the real deployments are recorded in contracts.json
+/broadcast/
