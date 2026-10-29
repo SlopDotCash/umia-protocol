@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 
 # Umia contracts are dual-licensed: the integration surface is MIT so anyone can build
 # against the protocol, and the implemented mechanism is BUSL-1.1. See licenses/.
-MIT_DIRS=("src/interfaces/" "src/reclaim/")
+MIT_DIRS=("src/interfaces/" "src/zktls/")
 MIT_FILES=(
     "src/core/VentureProxy.sol"
     "src/tokens/VentureToken.sol"

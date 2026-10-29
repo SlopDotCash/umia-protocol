@@ -28,7 +28,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
         vm.etch(arbSys, address(new MockArbSys()).code);
         MockArbSys(arbSys).setArbBlockNumber(step0Start);
         vm.roll(1); // Ancestor height is before the auction, but L2 is in its gated step.
-        UmiaValidationHook nitroHook = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook nitroHook = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         vm.startPrank(admin);
         nitroHook.setCCA(address(mockCCA));
@@ -94,7 +94,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     // ============ Inline Verification — Monotonic Step Prefix ============
 
     function test_validate_inline_monotonic_differentProviders_succeeds() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -116,7 +116,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_inline_futureStep_reverts() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -136,7 +136,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_inline_monotonic_alreadyVerified_shortCircuits() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -155,7 +155,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_inline_stepPrefixed_storesLowestStep() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -184,7 +184,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_permitOnlyStep_rejectsProofWithServerPermitRequired() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -208,7 +208,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     // ============ Inline Verification — Extended Edge Cases ============
 
     function test_validate_inline_threeStepSkip_succeeds() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployThreeStepCCA();
 
@@ -232,7 +232,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_inline_outOfBoundsProofStep_reverts() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -260,7 +260,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_permitOnly_truncatedPermit_reverts() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -278,7 +278,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_permitOnly_truncatedSignatureTail_reverts() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -301,7 +301,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_permitOnly_hugeSignatureLength_reverts() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -323,7 +323,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_bothGates_emptyHookData_reverts() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -341,7 +341,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_inline_step0_withAllStepsEnabled() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployThreeStepCCA();
 
@@ -374,7 +374,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
 
     function test_validate_inline_secondUserIndependent() public {
         address user2 = makeAddr("user2");
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -412,7 +412,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_inline_proofStepEqualsCurrentStep_boundaryCheck() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployThreeStepCCA();
 
@@ -464,7 +464,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_inEnabledStep_verifiedForLaterStep_reverts() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -485,7 +485,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_inEnabledStep_verifiedForCorrectStep_succeeds() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -505,7 +505,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     // ============ Validate — Monotonic Verification ============
 
     function test_validate_monotonic_verifiedAtStep0_passesStep1() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -528,7 +528,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_monotonic_verifiedAtStep1_failsStep0() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -552,7 +552,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_monotonic_laterProofKeepsEarlierRegistration() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -573,7 +573,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     // ============ Validate — Disabled Step ============
 
     function test_validate_inDisabledStep_allowsAnyone() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -588,7 +588,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     function test_validate_inDisabledStep_allowsDifferentSender() public {
         address other = makeAddr("other");
 
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -616,7 +616,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_noCCA_allowsAnyone() public {
-        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         freshHook.validate(0, 0, user, user, bytes(""));
     }
@@ -631,7 +631,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_setCCA_emitsEvent() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -642,7 +642,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_setCCA_zeroAddress_reverts() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
 
         vm.prank(admin);
@@ -660,7 +660,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_setCCA_nonOwner_reverts() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -672,7 +672,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     // ============ enableStep / disableStep ============
 
     function test_enableStep_succeeds() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -687,7 +687,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_enableStep_emitsEvent() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -707,7 +707,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_enableStep_noCCA_reverts() public {
-        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
 
         vm.prank(admin);
@@ -745,7 +745,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     // ============ enableStepBatch / disableStepBatch ============
 
     function test_enableStepBatch_succeeds() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -769,7 +769,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_disableStepBatch_succeeds() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -813,7 +813,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_setStepProviders_noCCA_reverts() public {
-        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
 
         vm.prank(admin);
@@ -878,7 +878,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_addStepProviders_acrossSteps() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -942,7 +942,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_addStepProviders_noCCA_reverts() public {
-        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
 
         uint256[] memory steps = new uint256[](1);
@@ -954,7 +954,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_setStepProvidersBatch_succeeds() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -1053,7 +1053,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_differentStepsDifferentProviders() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -1108,7 +1108,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_enableStep_emptyProviders_noPermit_isOpen() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -1137,7 +1137,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_isVerified_isMonotonic() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -1155,7 +1155,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_isVerified_notEligibleForEarlierSteps() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -1245,7 +1245,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_expirationBlock_zeroBeforeSetCCA() public {
-        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
 
         assertEq(freshHook.expirationBlock(), 0);
@@ -1323,7 +1323,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     // ============ Stale Step Fallback ============
 
     function test_validate_staleStep_enforcesNextStepVerification() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         StaleMockCCA cca = _deployStaleTwoStepCCA();
 
@@ -1341,7 +1341,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_staleStep_revertsUnverified() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         StaleMockCCA cca = _deployStaleTwoStepCCA();
 
@@ -1357,7 +1357,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_staleStep_pastAllStepsAllowsAnyone() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         StaleMockCCA cca = _deployStaleTwoStepCCA();
 
@@ -1395,7 +1395,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_unregister_noCCA_reverts() public {
-        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
 
         vm.prank(admin);
@@ -1445,7 +1445,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_unregisterBatch_noCCA_reverts() public {
-        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         address[] memory users = new address[](1);
         users[0] = user;
@@ -1514,7 +1514,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_removeStepProviders_acrossSteps() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -1622,7 +1622,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_removeStepProviders_noCCA_reverts() public {
-        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
 
         uint256[] memory steps = new uint256[](1);
@@ -1666,7 +1666,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_enableStep_emitsRemovedForReplacedProviders() public {
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -1743,7 +1743,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_enableStepPermit_noCCA_reverts() public {
-        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
 
         vm.prank(admin);
@@ -1870,7 +1870,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_inlineServerPermit_monotonic_succeeds() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -1895,7 +1895,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_inlineServerPermit_permitStepTooHigh_reverts() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -1919,7 +1919,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_bareStepAfterPermitStep_isOpen() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -1948,7 +1948,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_inlineServerPermit_notEnabled_reverts() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -1971,7 +1971,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_providerOnlyStep_rejectsPermitWithProofRequired() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -1994,7 +1994,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_bothGates_typeBytePicksCredential() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -2023,7 +2023,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_inlineServerPermit_signerNotSet_reverts() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -2175,7 +2175,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_setMaxBidPrice_noCCAReverts() public {
-        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook freshHook = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         assertEq(freshHook.maxBidPrice(), 0, "fresh hook cap should be 0");
         vm.prank(admin);
@@ -2253,7 +2253,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
         cca2.setFloorPrice(500);
         cca2.setTickSpacing(250);
 
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         vm.startPrank(admin);
         h.setCCA(address(cca2));
@@ -2515,7 +2515,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_capRevertsBeforeVerificationCheck() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -2535,7 +2535,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_belowCapStillNeedsVerification() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -2553,7 +2553,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_permitUnderPriceCapSucceeds() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -2579,7 +2579,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_permitAtPriceCapSucceeds() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -2605,7 +2605,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_validate_permitAbovePriceCapReverts_nonceNotBurned() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -2705,7 +2705,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
         _register(hook, user, 0, proofA);
 
         // The distinct identity-provider namespace keeps independent accounts separate.
-        UmiaValidationHook hook2 = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
         vm.startPrank(admin);
@@ -2789,7 +2789,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_identityProvider_signedNamespaceMustMatchAssignment() public {
-        UmiaValidationHook other = new UmiaValidationHook(admin, address(reclaim), address(0));
+        UmiaValidationHook other = new UmiaValidationHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA auction = _deploySingleStepCCA();
         vm.startPrank(admin);
@@ -2882,7 +2882,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_setStepMaxBidAmount_noCCAReverts() public {
-        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         vm.prank(admin);
         vm.expectRevert(UmiaValidationHook.NoCCA.selector);
@@ -2993,7 +2993,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_zkCap_perStepBudgetsIndependent_monotonicVerification() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -3028,7 +3028,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_zkCap_permitPathUnaffectedByZkCap() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -3089,7 +3089,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_setZkGlobalMaxBidAmount_settableBeforeCCA() public {
-        UmiaValidationHook freshHook = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook freshHook = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         vm.prank(admin);
         freshHook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP);
@@ -3216,7 +3216,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_zkGlobalCap_permitPathNotCounted() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -3242,7 +3242,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_zkGlobalCap_verifiedWalletRequiresPermitOnLaterPermitOnlyStep() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -3283,7 +3283,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_zkGlobalCap_verifiedWalletOnLaterDualGateStillUsesProofCap() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 
@@ -3318,7 +3318,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
     }
 
     function test_zkGlobalCap_verifiedWalletOnEnabledOpenStepDoesNotAccrue() public {
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployTwoStepCCA();
 

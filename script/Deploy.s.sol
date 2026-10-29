@@ -23,7 +23,7 @@ import {CCALens} from "@continuous-clearing-auction/lens/CCALens.sol";
 import {ProtocolFeeController} from "@liquidity-launcher/periphery/ProtocolFeeController.sol";
 import {UmiaLBPFactoryV2} from "../src/launchpad/UmiaLBPFactoryV2.sol";
 import {CCAExitHelper} from "../src/periphery/CCAExitHelper.sol";
-import {Reclaim} from "../src/reclaim/Reclaim.sol";
+import {ZkTlsVerifier} from "../src/zktls/ZkTlsVerifier.sol";
 import {UmiaHookV2} from "../src/periphery/UmiaHookV2.sol";
 import {SpotLiquidityV2Code} from "../src/periphery/SpotLiquidityV2Code.sol";
 import {UmiaTwapMilestoneCondition} from "../src/periphery/UmiaTwapMilestoneCondition.sol";
@@ -39,6 +39,19 @@ contract Deploy is Script {
         address deployer = vm.addr(deployerPrivateKey);
         uint256 marketSignerKey = vm.envOr("MARKET_CREATION_SIGNER_KEY", uint256(0));
         address marketSigner = marketSignerKey != 0 ? vm.addr(marketSignerKey) : deployer;
+
+        require(vm.envOr("RECLAIM_ADDRESS", address(0)) == address(0), "RECLAIM_ADDRESS is now ZKTLS_VERIFIER_ADDRESS");
+        address existingZkTlsVerifier = vm.envOr("ZKTLS_VERIFIER_ADDRESS", address(0));
+        ZkTlsVerifier.Witness[] memory initialWitnesses = new ZkTlsVerifier.Witness[](1);
+        // The attestor signs one pinned epoch; a fresh verifier is advanced to it with the same witness.
+        uint32 claimEpoch = uint32(vm.envOr("ZKTLS_CLAIM_EPOCH", uint256(1)));
+        if (existingZkTlsVerifier == address(0)) {
+            address witness = vm.envOr("ZKTLS_WITNESS_ADDRESS", address(0));
+            string memory host = vm.envOr("ZKTLS_WITNESS_HOST", string(""));
+            require(witness != address(0) && bytes(host).length > 0, "Invalid ZkTlsVerifier witness");
+            require(claimEpoch != 0, "Invalid ZKTLS_CLAIM_EPOCH");
+            initialWitnesses[0] = ZkTlsVerifier.Witness({addr: witness, host: host});
+        }
 
         console.log("Deploying Umia contracts...");
         console.log("Deployer:", deployer);
@@ -171,18 +184,17 @@ contract Deploy is Script {
         UmiaLBPFactoryV2 lbpFactory = new UmiaLBPFactoryV2(IPoolManager(poolManager), hookAddr, address(hub), code);
         console.log("UmiaLBPFactoryV2 deployed at:", address(lbpFactory));
 
-        // Deploy Reclaim verifier (skip if RECLAIM_ADDRESS env points at an existing one).
+        // Deploy the zkTLS verifier (skip if ZKTLS_VERIFIER_ADDRESS points at an existing one).
         // Deploy before the hook initialization transaction: V2 adds the code container above,
         // so this keeps the fresh devnet verifier at the nonce pinned by the extension/attestor.
-        address existingReclaim = vm.envOr("RECLAIM_ADDRESS", address(0));
-        Reclaim reclaim;
-        if (existingReclaim != address(0)) {
-            require(existingReclaim.code.length > 0, "RECLAIM_ADDRESS has no bytecode on this chain");
-            reclaim = Reclaim(existingReclaim);
-            console.log("Reclaim (existing):", existingReclaim);
+        ZkTlsVerifier zktlsVerifier;
+        if (existingZkTlsVerifier != address(0)) {
+            require(existingZkTlsVerifier.code.length > 0, "ZKTLS_VERIFIER_ADDRESS has no bytecode on this chain");
+            zktlsVerifier = ZkTlsVerifier(existingZkTlsVerifier);
+            console.log("ZkTlsVerifier (existing):", existingZkTlsVerifier);
         } else {
-            reclaim = new Reclaim();
-            console.log("Reclaim deployed at:", address(reclaim));
+            zktlsVerifier = new ZkTlsVerifier(initialWitnesses, 1);
+            console.log("ZkTlsVerifier deployed at:", address(zktlsVerifier));
         }
 
         // Must be sent by the deployer EOA: initialize checks INITIAL_OWNER.
@@ -190,7 +202,7 @@ contract Deploy is Script {
         console.log("UmiaHookV2 initialized");
 
         // Deploy the per-chain MetaVesT singletons (#1053). Same deploy-or-reuse-via-env
-        // contract as CCA_FACTORY / RECLAIM_ADDRESS above: devnet redeploys fresh on every
+        // contract as CCA_FACTORY / ZKTLS_VERIFIER_ADDRESS above: devnet redeploys fresh on every
         // anvil reset, persistent chains pin the canonical once-deployed singletons. The
         // per-venture controller + adapter are created later by launch-with-vesting, not here.
         _deployMetaVest();
@@ -225,6 +237,13 @@ contract Deploy is Script {
             console.log("USDC approved as money token:", usdc);
         }
 
+        // Last, so the epoch transactions shift no other deployment's address.
+        if (existingZkTlsVerifier == address(0)) {
+            while (zktlsVerifier.currentEpoch() < claimEpoch) {
+                zktlsVerifier.addNewEpoch(initialWitnesses, 1);
+            }
+        }
+
         vm.stopBroadcast();
 
         // Output environment variables for .env file
@@ -240,7 +259,7 @@ contract Deploy is Script {
         console.log("UMIA_HOOK_V2_ADDRESS=", hookAddr);
         console.log("LBP_FACTORY_V2_ADDRESS=", address(lbpFactory));
         console.log("SPOT_LIQUIDITY_V2_CODE_ADDRESS=", address(code));
-        console.log("RECLAIM_ADDRESS=", address(reclaim));
+        console.log("ZKTLS_VERIFIER_ADDRESS=", address(zktlsVerifier));
         console.log("UMIA_MARKET_STAKE_ADDRESS=", address(marketStake));
 
         // Output block number for indexer start_block config

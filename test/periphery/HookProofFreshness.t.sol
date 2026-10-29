@@ -7,7 +7,7 @@ import {UmiaValidationHookBase, MockCCA} from "./UmiaValidationHookBase.t.sol";
 
 contract HookProofFreshnessTest is UmiaValidationHookBase {
     function test_registrationProofCannotBeReusedForAnotherAuction() public {
-        UmiaValidationHook other = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook other = _newHook(admin, address(zktlsVerifier), address(0));
         MockCCA otherCCA = _deploySingleStepCCA();
         vm.startPrank(admin);
         other.setCCA(address(otherCCA));
@@ -55,7 +55,7 @@ contract HookProofFreshnessTest is UmiaValidationHookBase {
 
     function test_credentialViewMatchesEmptyBidAcrossGateModes() public {
         MockCCA cca2 = _deployTwoStepCCA();
-        UmiaValidationHook h = _newHook(admin, address(reclaim), address(0));
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         vm.startPrank(admin);
         h.setCCA(address(cca2));

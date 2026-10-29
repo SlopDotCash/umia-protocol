@@ -8695,7 +8695,7 @@ export const umiaValidationHookAbi = [
     type: 'constructor',
     inputs: [
       { name: '_owner', internalType: 'address', type: 'address' },
-      { name: '_reclaim', internalType: 'address', type: 'address' },
+      { name: '_zktlsVerifier', internalType: 'address', type: 'address' },
       { name: 'signer_', internalType: 'address', type: 'address' },
     ],
     stateMutability: 'nonpayable',
@@ -8949,13 +8949,6 @@ export const umiaValidationHookAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'reclaim',
-    outputs: [{ name: '', internalType: 'contract Reclaim', type: 'address' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [
       { name: '_stepIndices', internalType: 'uint256[]', type: 'uint256[]' },
       { name: '_providerHashes', internalType: 'bytes32[]', type: 'bytes32[]' },
@@ -9155,6 +9148,15 @@ export const umiaValidationHookAbi = [
     inputs: [],
     name: 'zkGlobalMaxBidAmount',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'zktlsVerifier',
+    outputs: [
+      { name: '', internalType: 'contract ZkTlsVerifier', type: 'address' },
+    ],
     stateMutability: 'view',
   },
   {
@@ -9550,17 +9552,6 @@ export const umiaValidationHookAbi = [
       { name: 'currentStep', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'CredentialStepMismatch',
-  },
-  { type: 'error', inputs: [], name: 'ECDSAInvalidSignature' },
-  {
-    type: 'error',
-    inputs: [{ name: 'length', internalType: 'uint256', type: 'uint256' }],
-    name: 'ECDSAInvalidSignatureLength',
-  },
-  {
-    type: 'error',
-    inputs: [{ name: 's', internalType: 'bytes32', type: 'bytes32' }],
-    name: 'ECDSAInvalidSignatureS',
   },
   { type: 'error', inputs: [], name: 'EmptyIdentityParameters' },
   { type: 'error', inputs: [], name: 'ExpiredDeadline' },
@@ -10690,6 +10681,292 @@ export const ventureTokenAbi = [
   },
   { type: 'error', inputs: [], name: 'EnforcedPause' },
   { type: 'error', inputs: [], name: 'ExpectedPause' },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],
+    name: 'OwnableInvalidOwner',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
+    name: 'OwnableUnauthorizedAccount',
+  },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ZkTlsVerifier
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const zkTlsVerifierAbi = [
+  {
+    type: 'constructor',
+    inputs: [
+      {
+        name: 'initialWitnesses',
+        internalType: 'struct ZkTlsVerifier.Witness[]',
+        type: 'tuple[]',
+        components: [
+          { name: 'addr', internalType: 'address', type: 'address' },
+          { name: 'host', internalType: 'string', type: 'string' },
+        ],
+      },
+      { name: 'minWitnesses', internalType: 'uint8', type: 'uint8' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'witnesses',
+        internalType: 'struct ZkTlsVerifier.Witness[]',
+        type: 'tuple[]',
+        components: [
+          { name: 'addr', internalType: 'address', type: 'address' },
+          { name: 'host', internalType: 'string', type: 'string' },
+        ],
+      },
+      {
+        name: 'requisiteWitnessesForClaimCreate',
+        internalType: 'uint8',
+        type: 'uint8',
+      },
+    ],
+    name: 'addNewEpoch',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'currentEpoch',
+    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'epochDurationS',
+    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    name: 'epochs',
+    outputs: [
+      { name: 'id', internalType: 'uint32', type: 'uint32' },
+      { name: 'timestampStart', internalType: 'uint32', type: 'uint32' },
+      { name: 'timestampEnd', internalType: 'uint32', type: 'uint32' },
+      {
+        name: 'minimumWitnessesForClaimCreation',
+        internalType: 'uint8',
+        type: 'uint8',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'epoch', internalType: 'uint32', type: 'uint32' }],
+    name: 'fetchEpoch',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct ZkTlsVerifier.Epoch',
+        type: 'tuple',
+        components: [
+          { name: 'id', internalType: 'uint32', type: 'uint32' },
+          { name: 'timestampStart', internalType: 'uint32', type: 'uint32' },
+          { name: 'timestampEnd', internalType: 'uint32', type: 'uint32' },
+          {
+            name: 'witnesses',
+            internalType: 'struct ZkTlsVerifier.Witness[]',
+            type: 'tuple[]',
+            components: [
+              { name: 'addr', internalType: 'address', type: 'address' },
+              { name: 'host', internalType: 'string', type: 'string' },
+            ],
+          },
+          {
+            name: 'minimumWitnessesForClaimCreation',
+            internalType: 'uint8',
+            type: 'uint8',
+          },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'epoch', internalType: 'uint32', type: 'uint32' },
+      { name: 'identifier', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'timestampS', internalType: 'uint32', type: 'uint32' },
+    ],
+    name: 'fetchWitnessesForClaim',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct ZkTlsVerifier.Witness[]',
+        type: 'tuple[]',
+        components: [
+          { name: 'addr', internalType: 'address', type: 'address' },
+          { name: 'host', internalType: 'string', type: 'string' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'owner',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'renounceOwnership',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'newOwner', internalType: 'address', type: 'address' }],
+    name: 'transferOwnership',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'proof',
+        internalType: 'struct ZkTlsVerifier.Proof',
+        type: 'tuple',
+        components: [
+          {
+            name: 'claimInfo',
+            internalType: 'struct Claims.ClaimInfo',
+            type: 'tuple',
+            components: [
+              { name: 'provider', internalType: 'string', type: 'string' },
+              { name: 'parameters', internalType: 'string', type: 'string' },
+              { name: 'context', internalType: 'string', type: 'string' },
+            ],
+          },
+          {
+            name: 'signedClaim',
+            internalType: 'struct Claims.SignedClaim',
+            type: 'tuple',
+            components: [
+              {
+                name: 'claim',
+                internalType: 'struct Claims.CompleteClaimData',
+                type: 'tuple',
+                components: [
+                  {
+                    name: 'identifier',
+                    internalType: 'bytes32',
+                    type: 'bytes32',
+                  },
+                  { name: 'owner', internalType: 'address', type: 'address' },
+                  {
+                    name: 'timestampS',
+                    internalType: 'uint32',
+                    type: 'uint32',
+                  },
+                  { name: 'epoch', internalType: 'uint32', type: 'uint32' },
+                ],
+              },
+              { name: 'signatures', internalType: 'bytes[]', type: 'bytes[]' },
+            ],
+          },
+        ],
+      },
+    ],
+    name: 'validateProof',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct ZkTlsContext.Context',
+        type: 'tuple',
+        components: [
+          { name: 'contextAddress', internalType: 'address', type: 'address' },
+          { name: 'providerHash', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'identityProvider', internalType: 'string', type: 'string' },
+          { name: 'contextMessage', internalType: 'string', type: 'string' },
+          { name: 'extractedParameters', internalType: 'bytes', type: 'bytes' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'epoch',
+        internalType: 'struct ZkTlsVerifier.Epoch',
+        type: 'tuple',
+        components: [
+          { name: 'id', internalType: 'uint32', type: 'uint32' },
+          { name: 'timestampStart', internalType: 'uint32', type: 'uint32' },
+          { name: 'timestampEnd', internalType: 'uint32', type: 'uint32' },
+          {
+            name: 'witnesses',
+            internalType: 'struct ZkTlsVerifier.Witness[]',
+            type: 'tuple[]',
+            components: [
+              { name: 'addr', internalType: 'address', type: 'address' },
+              { name: 'host', internalType: 'string', type: 'string' },
+            ],
+          },
+          {
+            name: 'minimumWitnessesForClaimCreation',
+            internalType: 'uint8',
+            type: 'uint8',
+          },
+        ],
+        indexed: false,
+      },
+    ],
+    name: 'EpochAdded',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'previousOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'OwnershipTransferred',
+  },
+  { type: 'error', inputs: [], name: 'ECDSAInvalidSignature' },
+  {
+    type: 'error',
+    inputs: [{ name: 'length', internalType: 'uint256', type: 'uint256' }],
+    name: 'ECDSAInvalidSignatureLength',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 's', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'ECDSAInvalidSignatureS',
+  },
   {
     type: 'error',
     inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],

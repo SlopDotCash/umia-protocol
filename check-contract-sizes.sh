@@ -15,6 +15,7 @@ CONTRACTS=(
     "SettlementLib"
     "UmiaHook"
     "UmiaValidationHook"
+    "ZkTlsVerifier"
     "GovernanceExecutor"
     "Venture"
     "UmiaLBPFactory"

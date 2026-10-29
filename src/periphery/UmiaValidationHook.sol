@@ -14,10 +14,8 @@ import {IGatedValidationHook} from "../interfaces/IGatedValidationHook.sol";
 import {IMaxBidPriceValidationHook} from "../interfaces/IMaxBidPriceValidationHook.sol";
 import {IVerifyEveryBidHook} from "../interfaces/IVerifyEveryBidHook.sol";
 import {IUmiaValidationHook} from "../interfaces/IUmiaValidationHook.sol";
-import {Reclaim} from "../reclaim/Reclaim.sol";
-import {Claims} from "../reclaim/Claims.sol";
-import {ReclaimProofVerifier} from "../reclaim/ReclaimProofVerifier.sol";
-import {StringUtils} from "../reclaim/StringUtils.sol";
+import {ZkTlsVerifier} from "../zktls/ZkTlsVerifier.sol";
+import {ZkTlsContext} from "../zktls/ZkTlsContext.sol";
 import {HookServerPermits} from "./HookServerPermits.sol";
 import {HookStepSchedule} from "./libraries/HookStepSchedule.sol";
 import {HookProofValidation} from "./libraries/HookProofValidation.sol";
@@ -25,7 +23,7 @@ import {HookProofValidation} from "./libraries/HookProofValidation.sol";
 /// @title UmiaValidationHook
 /// @notice CCA validation hook that restricts bidding to verified users. Credentials travel inline
 ///         in hookData and validate() is their only entry point:
-///         - zkTLS proof, `proofStep (32 bytes) ++ abi.encode(Reclaim.Proof)`: registers the owner on
+///         - zkTLS proof, `proofStep (32 bytes) ++ abi.encode(ZkTlsVerifier.Proof)`: registers the owner on
 ///           an ordinary step, or authorizes this one bid on a step that verifies every bid.
 ///         - Server permit, `0x01 ++ abi.encode(permitStep, nonce, deadline, signature)`: single-use,
 ///           signed over (wallet, step, nonce, deadline, amount), one per bid.
@@ -71,7 +69,7 @@ contract UmiaValidationHook is
     /// @notice Max age of a bid proof. Registration proofs never expire.
     uint256 public constant BID_PROOF_MAX_AGE = 10 minutes;
 
-    Reclaim public immutable reclaim;
+    ZkTlsVerifier public immutable zktlsVerifier;
 
     address private _cca;
     BlockRange[] private _steps;
@@ -154,9 +152,9 @@ contract UmiaValidationHook is
     event ZkGlobalMaxBidAmountSet(uint256 amount);
     event ZkGlobalBidAccrued(address indexed owner, uint256 amount, uint256 newTotal);
 
-    constructor(address _owner, address _reclaim, address signer_) HookServerPermits(signer_) {
+    constructor(address _owner, address _zktlsVerifier, address signer_) HookServerPermits(signer_) {
         _initializeOwner(_owner);
-        reclaim = Reclaim(_reclaim);
+        zktlsVerifier = ZkTlsVerifier(_zktlsVerifier);
     }
 
     // ─────────────────────────────────────────────────────────
@@ -220,7 +218,7 @@ contract UmiaValidationHook is
         if (hookData[0] == 0x01 || hookData.length < 32) revert ProofRequired(step);
         uint256 proofStep = uint256(bytes32(hookData[:32]));
         _requireCredentialStep(everyBid, step, proofStep, false);
-        Reclaim.Proof memory proof = abi.decode(hookData[32:], (Reclaim.Proof));
+        ZkTlsVerifier.Proof memory proof = abi.decode(hookData[32:], (ZkTlsVerifier.Proof));
         if (everyBid) _consumeBidProof(owner, proofStep, proof, amount);
         else _register(owner, proofStep, proof);
     }
@@ -256,32 +254,32 @@ contract UmiaValidationHook is
     // Proofs
     // ─────────────────────────────────────────────────────────
 
-    function _register(address user, uint256 step, Reclaim.Proof memory proof) private {
-        HookProofValidation.validateRegistration(proof, _cca);
-        bytes32 identifier = _verifyProof(user, step, proof);
+    function _register(address user, uint256 step, ZkTlsVerifier.Proof memory proof) private {
+        ZkTlsContext.Context memory context = zktlsVerifier.validateProof(proof);
+        HookProofValidation.validateRegistration(context.contextMessage, _cca);
+        _verifyContext(user, step, context);
+        bytes32 identifier = proof.signedClaim.claim.identifier;
         _registrations[user] = Registration({active: true, fromStep: uint64(step)});
         emit Registered(step, user);
         emit ProofVerified(user, step, identifier);
     }
 
     /// @dev Bid proofs are single-use and never register the wallet.
-    function _consumeBidProof(address user, uint256 step, Reclaim.Proof memory proof, uint128 amount) private {
-        HookProofValidation.validateBid(proof, _cca, step, amount, BID_PROOF_MAX_AGE);
-        bytes32 identifier = _verifyProof(user, step, proof);
+    function _consumeBidProof(address user, uint256 step, ZkTlsVerifier.Proof memory proof, uint128 amount) private {
+        HookProofValidation.validateBidTimestamp(proof.signedClaim.claim.timestampS, BID_PROOF_MAX_AGE);
+        ZkTlsContext.Context memory context = zktlsVerifier.validateProof(proof);
+        HookProofValidation.validateBid(context.contextMessage, _cca, step, amount);
+        _verifyContext(user, step, context);
+        bytes32 identifier = proof.signedClaim.claim.identifier;
         if (_consumedBidProofs[identifier]) revert ProofAlreadyUsed(identifier);
         _consumedBidProofs[identifier] = true;
         emit ProofVerified(user, step, identifier);
     }
 
-    function _verifyProof(address user, uint256 step, Reclaim.Proof memory proof) private returns (bytes32) {
-        string memory context = proof.claimInfo.context;
-        address subject = StringUtils.str2address(Claims.extractFieldFromContext(context, '"contextAddress":"'));
-        if (subject != user) revert ContextAddressMismatch(user, subject);
-        bytes32 providerHash = StringUtils.str2bytes32(Claims.extractFieldFromContext(context, '"providerHash":"'));
-        _requireProvider(step, providerHash);
-        _claimIdentity(user, step, providerHash, context);
-        ReclaimProofVerifier.verifyProof(reclaim, proof);
-        return proof.signedClaim.claim.identifier;
+    function _verifyContext(address user, uint256 step, ZkTlsContext.Context memory context) private {
+        if (context.contextAddress != user) revert ContextAddressMismatch(user, context.contextAddress);
+        _requireProvider(step, context.providerHash);
+        _claimIdentity(user, step, context.providerHash, context.identityProvider, context.extractedParameters);
     }
 
     function _requireProvider(uint256 step, bytes32 providerHash) private view {
@@ -295,15 +293,19 @@ contract UmiaValidationHook is
 
     /// @dev One real-world account registers one wallet. The identity is the namespace assigned to the
     ///      provider hash plus the signed extractedParameters, so recipes in a namespace share one lock.
-    function _claimIdentity(address user, uint256 step, bytes32 providerHash, string memory context) private {
+    function _claimIdentity(
+        address user,
+        uint256 step,
+        bytes32 providerHash,
+        string memory signedNamespace,
+        bytes memory parameters
+    ) private {
         string memory namespace = _identityProviderByHash[providerHash];
         if (bytes(namespace).length == 0) revert IdentityProviderMissing(providerHash);
-        string memory signedNamespace = Claims.extractFieldFromContext(context, '"identityProvider":"');
         if (keccak256(bytes(signedNamespace)) != keccak256(bytes(namespace))) {
             revert IdentityProviderMismatch(providerHash);
         }
-        bytes memory parameters = Claims.extractJsonObjectFromContext(context, '"extractedParameters":');
-        if (!Claims.hasNonEmptyStringValues(parameters)) revert EmptyIdentityParameters();
+        if (parameters.length == 0) revert EmptyIdentityParameters();
 
         bytes32 identity = keccak256(abi.encode(namespace, parameters));
         address existing = _identityToUser[identity];

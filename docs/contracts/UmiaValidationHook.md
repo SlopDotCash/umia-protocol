@@ -26,7 +26,13 @@ Activate a future step atomically with `multicall`: lead the batch with `require
 
 `setVerifyEveryBid` emits `VerifyEveryBidSet(stepIndex, required)`, and `verifiesEveryBid(step)` reads the flag back. On such a step a bidder uses a permit when the signer grants one; a fresh proof for the bid is accepted instead only when the step also has a proof gate (a non-empty provider list). A permit-only step takes permits and nothing else.
 
-Proof authenticity is checked by the stateless `ReclaimProofVerifier` library against the configured beacon's witnesses. Calling the beacon's public `verifyProof` cannot burn a hook credential. Bid proofs are consumed once per hook; failed bids roll back consumption.
+Proof authenticity and context parsing are handled by the verifier's read-only `validateProof`. It authenticates the claim hash, current epoch and witness signatures before parsing once with Solady `JSONParserLib`; encoding and security-key guards reject malformed UTF-8, raw controls, duplicate/nested security fields and escaped keys. It returns typed fields (`contextAddress` as an address, `providerHash` as bytes32) and the exact signed `extractedParameters` object bytes, preserving identity hashes without JSON reserialization. The verifier is stateless: it has no replay registry, so no public call can burn a hook credential. The hook retains domain/subject/provider/namespace policy, identity ownership, bid replay and caps. Bid proofs are consumed once per hook; failed bids roll back consumption.
+
+New hooks require a verifier implementing `validateProof`; older verifiers have no compatible fallback. Before deploying a hook, the internal CLI compares the verifier's executable code (without its compiler metadata trailer) with the current ZkTlsVerifier artifact and rejects any mismatch, including configured addresses and overrides. Use `--deploy-zktls-verifier` to deploy a fresh approved-witness verifier and align its epoch instead of reusing an address. Review authority address/code-hash pins explicitly before rollout, then create the immutable auction pair. The hook has no linked Claims library to deploy. `Claims.sol` retains the Reclaim wire types, signing serialization and OpenZeppelin ECDSA checks, using Solady `LibString` for byte-compatible formatting and OpenZeppelin `MessageHashUtils` for the EIP-191 digest.
+
+All witness-seed and auction-domain formatting uses Solady `LibString`; the custom string utility has been removed. The verifier's context parser decodes `contextAddress` and `providerHash` with `JSONParserLib.parseUintFromHex` and exact widths of 40 and 64 digits, respectively, allowing an optional `0x`/`0X` prefix. Non-hex characters and short/overlong fields revert; hashes are never truncated.
+
+New proofs must name the verifier's current epoch; zero and historical epochs revert `Stale epoch`. Witness rotation therefore invalidates pending proofs from earlier epochs, but does not clear standing registrations. Signed context fields must be unique and top-level; nested decoys and duplicate keys revert. Escaped JSON keys are rejected to prevent alternate spellings of security fields, while ordinary JSON whitespace and escaped values are supported.
 
 Registration proofs require a signed `register:<chain>:<lowercase auction>:<nonempty nonce>` context, so a proof for one auction cannot register the wallet in another. Within its auction a registration proof stays valid: `unregister` / `unregisterBatch` clear a wallet's standing registration, but any valid registration proof, including an earlier one, can register it again.
 
@@ -44,7 +50,7 @@ Hooks are not upgradeable and the CCA stores its hook immutably, so a capability
 
 One hook per gated auction. The CCA takes its `validationHook` as an immutable constructor parameter, so the order is:
 
-1. `new UmiaValidationHook(owner, reclaim, signer)`: the owner, the Reclaim verifier contract and the permit signer. The hook is unpaired and inert.
+1. `new UmiaValidationHook(owner, zktlsVerifier, signer)`: the owner, the zkTLS verifier contract and the permit signer. The hook is unpaired and inert.
 2. Create the venture with the hook address as the auction's `validationHook` (a field of the CCA `AuctionParameters`, encoded in the `auctionParams` bytes passed to `UmiaHub.createVenture` / `createVentureWithToken`; ungated auctions pass `address(0)`).
 3. `setCCA(cca)` as owner: one-shot pairing that caches the CCA's step schedule.
 4. Configure gates as owner, normally in one `multicall`: `setIdentityProvider(providerHash, namespace)` for each provider hash, then `enableStep(step, providerHashes, providerIds)` or `enableStepBatch(...)`, plus `enableStepPermit(step)`, `setStepMaxBidAmount(step, amount)` and `setVerifyEveryBid(step, true)` where wanted. Provider hashes and namespaces are those of the zkTLS provider recipes the Reclaim attestor signs for.
@@ -53,7 +59,7 @@ One hook per gated auction. The CCA takes its `validationHook` as an immutable c
 
 - `_cca` (paired CCA contract, set once via `setCCA`)
 - `_steps` (cached block ranges parsed from CCA's SSTORE2 data)
-- `_gates[stepIndex]` (one record per step: `enabled`, `permit`, `everyBid` and the required Reclaim `providers`)
+- `_gates[stepIndex]` (one record per step: `enabled`, `permit`, `everyBid` and the required zkTLS `providers`)
 - `_registrations[user]` (standing registration and the step it starts from)
 - `_consumedBidProofs[identifier]` (bid proofs already spent)
 - `_signer` and `_usedPermits` (permit signer and burned nonces, in the `HookServerPermits` base, which also owns the EIP-712 domain and permit errors)
@@ -110,3 +116,5 @@ The cap's revert is `MaxBidPriceExceeded()`, deliberately bare so the selector (
 - The bid sender may differ from the owner (for example a Relay destination executor). Only the paired CCA can call `validate`; credentials, verification and cap accounting bind to the bid owner. The CCA collects native value or ERC20 funds (using Permit2 approvals) from the sender, stores the owner on the bid, and pays refunds/claims to that owner. A relayer cannot redirect another owner's proof or amount-bound permit to itself.
 - Relaying does not add a new user-signed order: the permit still binds wallet/step/amount/nonce/deadline, not bid price. The sender supplies the price subject to the hook's price cap. Third-party-funded bids can consume the owner's allocation; this is inherent in allowing any sender to bid for an eligible owner.
 - OPRF sybil gate binds one real-world identity to one wallet per identity namespace: the key is `keccak256(abi.encode(namespace, extractedParameters))`, so recipes sharing a namespace share one lock. A proof hash without an assigned namespace reverts `IdentityProviderMissing`; a signed `identityProvider` that differs reverts `IdentityProviderMismatch`; absent, empty or whitespace-only `extractedParameters` values revert `EmptyIdentityParameters`.
+
+The immutable verifier getter is `zktlsVerifier()` on new hooks. Older deployed hooks retain `reclaim()`; select the matching ABI explicitly. See [the verifier migration guide](../ZKTLS_VERIFIER_MIGRATION.md).
