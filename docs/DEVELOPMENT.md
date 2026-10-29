@@ -60,7 +60,7 @@ All of these live at the project root.
 
 | Script | What it does | Needs |
 | ------ | ------------ | ----- |
-| `check-licenses.sh` | Every file under `src/` carries the expected SPDX identifier on line 1 (MIT for `src/interfaces/`, `src/reclaim/` and a listed set of libraries and value types, BUSL-1.1 for the rest), `src/` does not import `@metavest` (AGPL stays out of deployed code), and `licenses/` has no placeholder left | bash |
+| `check-licenses.sh` | Every file under `src/` carries the expected SPDX identifier on line 1 (MIT for `src/interfaces/`, `src/zktls/` and a listed set of libraries and value types, BUSL-1.1 for the rest), `src/` does not import `@metavest` (AGPL stays out of deployed code), and `licenses/` has no placeholder left | bash |
 | `check-contract-sizes.sh` | `forge inspect <Contract> deployedBytecode` for every deployable listed in the script is at most 24576 bytes (EIP-170), printed with its margin | a build |
 | `check-abi-codegen.sh` | Regenerates the ABI package (`bun run codegen` in `abi/`) and fails if `abi/src/generated.ts`, `abi/src/generated-addresses.ts`, `abi/addresses.json` or `abi/json/` differ from the committed copies | `bun`, and the project in a directory named `smart-contracts` (the script `cd`s one level up) |
 | `check-addresses.sh` | Regenerates only the address book (`abi/addresses.json`, `abi/src/generated-addresses.ts`) and fails on a diff. No forge or solc needed | `bun`, the same directory layout, and the `contracts.json` address book the generator reads, which is not part of this tree |
@@ -108,7 +108,7 @@ output. See [`abi/README.md`](../abi/README.md) for the layout and the publishin
 - `src/launchpad/` - LBP strategy and factory (V1 and V2)
 - `src/tokens/` - venture token
 - `src/libraries/` - CPMM math, market creation + settlement (external libraries), governance action VM/types, helpers
-- `src/interfaces/`, `src/reclaim/` (zkTLS verifier), `src/liquidation/`
+- `src/interfaces/`, `src/zktls/` (zkTLS verifier), `src/liquidation/`
 - `script/` - deployment and upgrade scripts
 - `test/` - Foundry test suites
 - `docs/` - protocol and contract docs
@@ -131,7 +131,7 @@ forge script script/Deploy.s.sol:Deploy \
 Inputs:
 - Required: `DEPLOYER_PRIVATE_KEY`, `POOL_MANAGER`, `UMIA_HOOK_DEPLOYER`, `UMIA_HOOK_V2_SALT`, `TWAP_WINDOW` (unless `METAVEST_FACTORY` reuses the singletons)
 - Required decision: `VESTING_ADMIN`, `VETO_GUARDIAN` and `ACTIVE_LIQUIDITY_KEEPER`, or the matching `*_UNSET_OK=true`
-- Optional: `MARKET_CREATION_SIGNER_KEY`, `USDC_ADDRESS`, and reuse addresses (`CCA_FACTORY`, `RECLAIM_ADDRESS`, `CCA_EXIT_HELPER_ADDRESS`, ...)
+- Optional: `MARKET_CREATION_SIGNER_KEY`, `USDC_ADDRESS`, and reuse addresses (`CCA_FACTORY`, `ZKTLS_VERIFIER_ADDRESS`, `CCA_EXIT_HELPER_ADDRESS`, ...)
 
 ### Deploy local Uniswap v4 infra (for fresh local chains)
 

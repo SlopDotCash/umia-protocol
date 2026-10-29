@@ -14,7 +14,9 @@ SOURCES=(
     src/periphery/libraries/*.sol
     src/interfaces/IUmiaValidationHook.sol
     src/interfaces/IVerifyEveryBidHook.sol
-    src/reclaim/ReclaimProofVerifier.sol
+    src/zktls/ZkTlsVerifier.sol
+    src/zktls/Claims.sol
+    src/zktls/ZkTlsContext.sol
 )
 
 if [ ! -f "$DOC" ]; then

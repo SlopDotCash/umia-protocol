@@ -5,8 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {AuctionStep} from "@continuous-clearing-auction/libraries/StepLib.sol";
 import {SSTORE2} from "@solady/utils/SSTORE2.sol";
 import {UmiaValidationHook} from "../../src/periphery/UmiaValidationHook.sol";
-import {Reclaim} from "../../src/reclaim/Reclaim.sol";
-import {Claims} from "../../src/reclaim/Claims.sol";
+import {ZkTlsVerifier} from "../../src/zktls/ZkTlsVerifier.sol";
+import {Claims} from "../../src/zktls/Claims.sol";
 
 contract MockCCA {
     address private _pointer;
@@ -131,10 +131,10 @@ contract StaleMockCCA {
     }
 }
 
-/// @dev Shared fixture: a paired hook with a live Reclaim beacon, a permit signer and proof builders.
+/// @dev Shared fixture: a paired hook with a live ZkTlsVerifier beacon, a permit signer and proof builders.
 abstract contract UmiaValidationHookBase is Test {
     UmiaValidationHook hook;
-    Reclaim reclaim;
+    ZkTlsVerifier zktlsVerifier;
     MockCCA mockCCA;
 
     address admin = makeAddr("admin");
@@ -154,8 +154,11 @@ abstract contract UmiaValidationHookBase is Test {
         return hash == PROVIDER_HASH_2 ? "other" : "github";
     }
 
-    function _newHook(address owner_, address reclaim_, address signer_) internal returns (UmiaValidationHook result) {
-        result = new UmiaValidationHook(owner_, reclaim_, signer_);
+    function _newHook(address owner_, address zktlsVerifier_, address signer_)
+        internal
+        returns (UmiaValidationHook result)
+    {
+        result = new UmiaValidationHook(owner_, zktlsVerifier_, signer_);
         vm.prank(owner_);
         result.setIdentityProvider(PROVIDER_HASH_1, "github");
         vm.prank(owner_);
@@ -224,7 +227,7 @@ abstract contract UmiaValidationHookBase is Test {
     }
 
     function _deployThreeStepHook() internal returns (UmiaValidationHook hook2) {
-        hook2 = _newHook(admin, address(reclaim), address(0));
+        hook2 = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deployThreeStepCCA();
 
@@ -297,7 +300,7 @@ abstract contract UmiaValidationHookBase is Test {
 
         Claims.SignedClaim memory signedClaim = Claims.SignedClaim({claim: claimData, signatures: signatures});
 
-        Reclaim.Proof memory proof = Reclaim.Proof({claimInfo: claimInfo, signedClaim: signedClaim});
+        ZkTlsVerifier.Proof memory proof = ZkTlsVerifier.Proof({claimInfo: claimInfo, signedClaim: signedClaim});
 
         return abi.encode(proof);
     }
@@ -311,7 +314,7 @@ abstract contract UmiaValidationHookBase is Test {
             abi.encodePacked(
                 '{"contextAddress":"',
                 _addressToString(_wrongUser),
-                '","providerHash":"0x1234","contextMessage":"register:',
+                '","providerHash":"0x0000000000000000000000000000000000000000000000000000000000001234","contextMessage":"register:',
                 _uint2str(block.chainid),
                 ":",
                 _address2str(address(mockCCA)),
@@ -349,7 +352,7 @@ abstract contract UmiaValidationHookBase is Test {
 
         Claims.SignedClaim memory signedClaim = Claims.SignedClaim({claim: claimData, signatures: signatures});
 
-        Reclaim.Proof memory proof = Reclaim.Proof({claimInfo: claimInfo, signedClaim: signedClaim});
+        ZkTlsVerifier.Proof memory proof = ZkTlsVerifier.Proof({claimInfo: claimInfo, signedClaim: signedClaim});
 
         return abi.encode(proof);
     }
@@ -396,12 +399,12 @@ abstract contract UmiaValidationHookBase is Test {
         witnessAddress = vm.addr(WITNESS_PRIVATE_KEY);
         signerAddress = vm.addr(SIGNER_PRIVATE_KEY);
 
-        reclaim = new Reclaim();
-        Reclaim.Witness[] memory witnesses = new Reclaim.Witness[](1);
-        witnesses[0] = Reclaim.Witness({addr: witnessAddress, host: "wss://test.example.com"});
-        reclaim.addNewEpoch(witnesses, 1);
+        ZkTlsVerifier.Witness[] memory witnesses = new ZkTlsVerifier.Witness[](1);
+        witnesses[0] = ZkTlsVerifier.Witness({addr: witnessAddress, host: "wss://test.example.com"});
+        zktlsVerifier = new ZkTlsVerifier(witnesses, 1);
+        zktlsVerifier.addNewEpoch(witnesses, 1);
 
-        hook = _newHook(admin, address(reclaim), address(0));
+        hook = _newHook(admin, address(zktlsVerifier), address(0));
         vm.warp(block.timestamp + 1);
         mockCCA = _deploySingleStepCCA();
 
@@ -420,7 +423,7 @@ abstract contract UmiaValidationHookBase is Test {
     }
 
     function _setupServerPermit() internal returns (UmiaValidationHook h) {
-        h = new UmiaValidationHook(admin, address(reclaim), signerAddress);
+        h = new UmiaValidationHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         MockCCA cca2 = _deploySingleStepCCA();
 
@@ -570,7 +573,7 @@ abstract contract UmiaValidationHookBase is Test {
         signatures[0] = signature;
 
         Claims.SignedClaim memory signedClaim = Claims.SignedClaim({claim: claimData, signatures: signatures});
-        Reclaim.Proof memory proof = Reclaim.Proof({claimInfo: claimInfo, signedClaim: signedClaim});
+        ZkTlsVerifier.Proof memory proof = ZkTlsVerifier.Proof({claimInfo: claimInfo, signedClaim: signedClaim});
 
         return abi.encode(proof);
     }
@@ -585,7 +588,7 @@ abstract contract UmiaValidationHookBase is Test {
 
     uint256 constant ZK_CAP = 1_000e6; // 1,000 USDC, money-token base units
 
-    /// @dev Builds inline-proof hookData: abi.encodePacked(uint256 proofStep, abi.encode(Reclaim.Proof)).
+    /// @dev Builds inline-proof hookData: abi.encodePacked(uint256 proofStep, abi.encode(ZkTlsVerifier.Proof)).
     function _inlineProof(uint256 proofStep, address _user) internal view returns (bytes memory) {
         return abi.encodePacked(proofStep, _createProofForUser(_user));
     }

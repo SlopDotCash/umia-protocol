@@ -12,6 +12,7 @@ export const CONTRACTS = [
   "UmiaHook",
   "CCAExitHelper",
   "UmiaValidationHook",
+  "ZkTlsVerifier",
   "ContinuousClearingAuction",
   "AuctionStateLens",
   "CCALens",

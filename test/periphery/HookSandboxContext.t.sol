@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Claims} from "../../src/reclaim/Claims.sol";
-import {Reclaim} from "../../src/reclaim/Reclaim.sol";
+import {Claims} from "../../src/zktls/Claims.sol";
+import {ZkTlsVerifier} from "../../src/zktls/ZkTlsVerifier.sol";
 import {HookProofValidation} from "../../src/periphery/libraries/HookProofValidation.sol";
 import {UmiaValidationHookBase} from "./UmiaValidationHookBase.t.sol";
 
@@ -46,7 +46,7 @@ contract HookSandboxContextTest is UmiaValidationHookBase {
         bytes[] memory signatures = new bytes[](1);
         signatures[0] = abi.encodePacked(r, s, v);
         return abi.encode(
-            Reclaim.Proof({
+            ZkTlsVerifier.Proof({
                 claimInfo: claimInfo, signedClaim: Claims.SignedClaim({claim: claimData, signatures: signatures})
             })
         );

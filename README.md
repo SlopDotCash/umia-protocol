@@ -12,7 +12,7 @@ Numbers below are the protocol constants and the Hub's defaults as deployed; the
 
 **1. Creation.** [`UmiaHub.createVenture`](./docs/contracts/UmiaHub.md) deploys three contracts in one transaction: the treasury ([`Venture`](./docs/contracts/Venture.md), a beacon proxy), the token ([`VentureToken`](./docs/contracts/VentureToken.md), a pausable ERC-20 with an initial supply between 100 and 10^12 units; governance can mint and burn later), and the launch strategy ([`UmiaLBPV2`](./docs/contracts/UmiaLBPV2.md)). The Hub mints the supply, hands token ownership to the treasury and sends the supply to the launch contract. Part of it is for sale; the rest is the reserve that will seed the pool.
 
-**2. Auction.** The launch contract runs a continuous clearing auction (Uniswap's CCA) with a floor price and timed steps. Bidding can be gated: [`UmiaValidationHook`](./docs/contracts/UmiaValidationHook.md) checks zkTLS proofs of off-chain facts (through the vendored Reclaim verifier) or single-use server permits before a bid is accepted. Outbid participants exit with `CCAExitHelper`.
+**2. Auction.** The launch contract runs a continuous clearing auction (Uniswap's CCA) with a floor price and timed steps. Bidding can be gated: [`UmiaValidationHook`](./docs/contracts/UmiaValidationHook.md) checks zkTLS proofs of off-chain facts (through `ZkTlsVerifier`, derived from Reclaim Protocol) or single-use server permits before a bid is accepted. Outbid participants exit with `CCAExitHelper`.
 
 **3. Landing.** Once the auction ends and `migrationDelayBlocks` (300) have passed, anyone calls `migrate()`. The raise is swept: `ventureBps` of it goes to the treasury as money; the rest is paired with the reserved tokens in a Uniswap V4 pool whose hook, [`UmiaHookV2`](./docs/contracts/UmiaHookV2.md), is also the oracle. The pool charges `spotSwapFeeBps` (1%), half of which is the protocol's. Pool-bound liquidity goes into two positions the treasury owns: a full-range anchor ([`SpotLiquidityVaultV2`](./docs/contracts/SpotLiquidityVaultV2.md), held through vault shares) and a concentrated range managed by a keeper ([`ActiveLiquidityManager`](./docs/contracts/ActiveLiquidityManager.md)). The Hub sets the split and the first range (`launchAnchorBps`, 75/25 today, and `launchActiveHalfWidthTicks`, 0.33x to 3x around the clearing price). Neither position can be funded twice: each has an immutable `bootstrapper`.
 
@@ -34,7 +34,7 @@ Everything that reads a venture's liquidity goes through the Hub's `ventureLiqui
 | Treasury | `Venture` behind `VentureProxy` (beacon): assets, allowances, team, documents, liquidation state | [Venture](./docs/contracts/Venture.md) |
 | Token | `VentureToken` | [VentureToken](./docs/contracts/VentureToken.md) |
 | Launch | `UmiaLBPV2`, `UmiaLBPFactoryV2`; `CCAExitHelper`; `UmiaLBP` and `UmiaLBPFactory` are the earlier strategy, kept for the ventures it launched | [UmiaLBPV2](./docs/contracts/UmiaLBPV2.md), [UmiaLBP](./docs/contracts/UmiaLBP.md), [UmiaLBPFactory](./docs/contracts/UmiaLBPFactory.md) |
-| Bid gating | `UmiaValidationHook`, `HookServerPermits`, `ReclaimProofVerifier` | [UmiaValidationHook](./docs/contracts/UmiaValidationHook.md) |
+| Bid gating | `UmiaValidationHook`, `HookServerPermits`, `ZkTlsVerifier`, `Claims`, `ZkTlsContext` | [UmiaValidationHook](./docs/contracts/UmiaValidationHook.md) |
 | Spot pool | `UmiaHookV2`; `SpotMarketOracle`, `TwapMath`, `SpotTwapGuard`, `TickSlew`; `UmiaHook` is the earlier hook, still serving pools created before it | [UmiaHookV2](./docs/contracts/UmiaHookV2.md), [SPOT_ORACLE](./docs/SPOT_ORACLE.md) |
 | Spot liquidity | `SpotLiquidityVaultV2`, `ActiveLiquidityManager`, `ActiveSlices`, `SpotLiquidityV2Code`, `SpotLiquidityV2Deploy`; `SpotMigrator` moves a venture from the earlier vault (`SpotLiquidityVault`) in one proposal | [SpotLiquidityVaultV2](./docs/contracts/SpotLiquidityVaultV2.md), [ActiveLiquidityManager](./docs/contracts/ActiveLiquidityManager.md), [SpotMigrator](./docs/contracts/SpotMigrator.md) |
 | Decision markets | `UmiaMarketCore` (UUPS) with the external libraries `MarketCreationLib` and `SettlementLib`; `CPMM`, `CPMMWithFee`, `LedgerLib`; `UmiaMarketStake`; `ConditionalMarketOracle` | [UmiaMarketCore](./docs/contracts/UmiaMarketCore.md), [ConditionalMarketOracle](./docs/contracts/ConditionalMarketOracle.md) |
@@ -74,7 +74,7 @@ Requires [Foundry](https://book.getfoundry.sh/). `foundry.toml` pins `solc 0.8.2
 git submodule update --init --recursive   # dependencies live in lib/
 forge build
 forge test
-forge test --match-path 'test/markets/*'   # one area: governance, launchpad, liquidation, markets, periphery, proxy, reclaim, vesting
+forge test --match-path 'test/markets/*'   # one area: governance, launchpad, liquidation, markets, periphery, proxy, vesting, zktls
 ```
 
 Fork tests skip themselves unless an RPC is set: `FORK_RPC_URL` for `test/fork/` and `test/proxy/UpgradeRehearsal.t.sol`, `BASE_RPC_URL` for `test/periphery/YieldPositionGuardianFork.t.sol`. `forge fmt` before committing. `check-licenses.sh` enforces the licence map below, `check-contract-sizes.sh` the EIP-170 limit, and `.storage-layouts/` records the upgradeable contracts' storage so a new implementation can be checked against the live one. [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md) covers the rest.
@@ -88,7 +88,7 @@ Fork tests skip themselves unless an RPC is set: `FORK_RPC_URL` for `test/fork/`
 | `src/periphery/` | Spot hooks (current and earlier), conditional market oracle, spot migrator, validation hook and server permits, CCA exit helper, vesting authority, TWAP milestone condition, yield guardian, spot liquidity creation-code store; `libraries/` holds the validation hook's proof and schedule helpers |
 | `src/libraries/` | CPMM math, market creation and settlement (external libraries linked into the core), governance types, validator and actions, oracle ring, tick slew, TWAP guard, active slices, spot liquidity deploy helper, calendar and ledger helpers |
 | `src/liquidation/` | `SimpleLiquidator` |
-| `src/reclaim/` | Vendored Reclaim Protocol zkTLS verifier |
+| `src/zktls/` | zkTLS verifier derived from Reclaim Protocol, signed claim types and context parsing |
 | `src/tokens/` | `VentureToken` |
 | `src/interfaces/` | Public interfaces |
 | `script/` | Deployment, upgrade and salt-mining scripts; `testnet-utils/` holds testnet-only helpers |
@@ -158,7 +158,7 @@ Contracts are licensed per file; the SPDX identifier on line 1 of each source fi
 | --- | --- | --- |
 | Mechanism | BUSL-1.1 | Markets, settlement, governance, launchpad, hooks and vaults: everything under `src/` not listed below |
 | Integration | MIT | `src/interfaces/**`, `VentureProxy`, `VentureToken`, `GovernanceTypes`, `MarketCoreTypes`, `SpotMarketOracle`, `TickSlew`, `PositionAmounts`, `TwapMath`, `CalendarLib` |
-| Vendored | MIT | `src/reclaim/**` (Reclaim Protocol) |
+| Vendored | MIT | `src/zktls/**` (Umia verifier derived from Reclaim Protocol) |
 | ABIs | MIT | `abi/` |
 
 BUSL-1.1 permits all non-production use (development, testing, testnet deployment, security research, audits). Its Additional Use Grant also permits production use, except deploying the contracts, or work derived from them, to a public blockchain as or as part of a protocol, product or service that provides decision markets or futarchy-based governance, or tokenized venture funding or onchain venture treasury management; that exclusion does not apply to the Licensor's canonical deployment. On the Change Date, 2030-08-11, the licence converts to MIT. The exact parameters are in [`licenses/BUSL_LICENSE`](./licenses/BUSL_LICENSE). MetaVesT is AGPL-3.0, so `src/` declares minimal local interfaces instead of importing it.

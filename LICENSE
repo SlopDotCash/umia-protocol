@@ -14,7 +14,7 @@ texts are in licenses/.
     MIT       The integration surface: src/interfaces/**, the shared type
               libraries, and generic math. Build against Umia freely.
 
-    MIT       Vendored third-party code in src/reclaim/** (Reclaim Protocol).
+    MIT       Reclaim-derived Umia verifier and helpers in src/zktls/**.
 
     MIT       abi/ — contract ABIs are free to use.
 

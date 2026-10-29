@@ -5,14 +5,14 @@ import {Ownable} from "@solady/auth/Ownable.sol";
 import {UmiaValidationHook} from "../../src/periphery/UmiaValidationHook.sol";
 import {HookServerPermits} from "../../src/periphery/HookServerPermits.sol";
 import {HookProofValidation} from "../../src/periphery/libraries/HookProofValidation.sol";
-import {Reclaim} from "../../src/reclaim/Reclaim.sol";
-import {Claims} from "../../src/reclaim/Claims.sol";
+import {ZkTlsVerifier} from "../../src/zktls/ZkTlsVerifier.sol";
+import {Claims} from "../../src/zktls/Claims.sol";
 import {UmiaValidationHookBase, MockCCA} from "./UmiaValidationHookBase.t.sol";
 
 /// @dev Exposes the internal bid-context check.
 contract BidContextHarness {
-    function validate(Reclaim.Proof memory proof, address auction, uint256 step, uint128 amount) external view {
-        HookProofValidation.validateBid(proof, auction, step, amount, 10 minutes);
+    function validate(string memory contextMessage, address auction, uint256 step, uint128 amount) external view {
+        HookProofValidation.validateBid(contextMessage, auction, step, amount);
     }
 }
 
@@ -100,7 +100,7 @@ contract UmiaValidationHookVerifyEveryBidTest is UmiaValidationHookBase {
 
         Claims.SignedClaim memory signedClaim = Claims.SignedClaim({claim: claimData, signatures: signatures});
 
-        Reclaim.Proof memory proof = Reclaim.Proof({claimInfo: claimInfo, signedClaim: signedClaim});
+        ZkTlsVerifier.Proof memory proof = ZkTlsVerifier.Proof({claimInfo: claimInfo, signedClaim: signedClaim});
 
         return abi.encode(proof);
     }
@@ -149,7 +149,7 @@ contract UmiaValidationHookVerifyEveryBidTest is UmiaValidationHookBase {
 
     function test_verifyEveryBid_registeredWalletStillRequiresCredential() public {
         MockCCA cca2 = _deployTwoStepCCA();
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         vm.startPrank(admin);
         h.setCCA(address(cca2));
@@ -220,7 +220,7 @@ contract UmiaValidationHookVerifyEveryBidTest is UmiaValidationHookBase {
 
     function test_verifyEveryBid_earlyBidToVerifyEveryBidToPublic() public {
         MockCCA cca3 = _deployThreeStepCCA();
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         vm.startPrank(admin);
         h.setCCA(address(cca3));
@@ -415,21 +415,6 @@ contract UmiaValidationHookVerifyEveryBidTest is UmiaValidationHookBase {
         hook.validate(0, 1, user, relayer, "");
     }
 
-    function test_verifyEveryBid_publicVerifierFrontRunCannotBurnBidProof() public {
-        _verifyEveryBidSetup();
-        bytes memory proofData = _createBidProof(user, PROVIDER_HASH_1, 1);
-        Reclaim.Proof memory proof = abi.decode(proofData, (Reclaim.Proof));
-        vm.prank(makeAddr("mempool-observer"));
-        reclaim.verifyProof(proof);
-        assertTrue(reclaim.usedProofs(proof.signedClaim.claim.identifier));
-        vm.prank(address(mockCCA));
-        hook.validate(0, 1, user, user, abi.encodePacked(uint256(0), proofData));
-        assertEq(hook.zkGlobalBidTotal(), 1);
-        vm.prank(address(mockCCA));
-        vm.expectPartialRevert(UmiaValidationHook.ProofAlreadyUsed.selector);
-        hook.validate(0, 1, user, user, abi.encodePacked(uint256(0), proofData));
-    }
-
     function test_consumedBidProofCannotRegisterOnceTheStepIsOrdinary() public {
         _verifyEveryBidSetup();
         bytes memory proof = _createBidProof(user, PROVIDER_HASH_1, 99);
@@ -470,18 +455,15 @@ contract UmiaValidationHookVerifyEveryBidTest is UmiaValidationHookBase {
         vm.chainId(84532);
         BidContextHarness harness = new BidContextHarness();
         address auction = 0x000000000000000000000000000000000000c0DE;
-        Reclaim.Proof memory proof;
-        proof.signedClaim.claim.timestampS = uint32(block.timestamp);
-        proof.claimInfo.context =
-        '{"contextMessage":"bid:84532:0x000000000000000000000000000000000000c0de:2:1000:n0nce"}';
-        harness.validate(proof, auction, 2, 1000);
+        string memory message = "bid:84532:0x000000000000000000000000000000000000c0de:2:1000:n0nce";
+        harness.validate(message, auction, 2, 1000);
         vm.expectRevert(HookProofValidation.BidProofContextMismatch.selector);
-        harness.validate(proof, auction, 2, 1001);
+        harness.validate(message, auction, 2, 1001);
     }
 
     function test_verifyEveryBid_proofCannotAuthorizeALaterOrdinaryStep() public {
         MockCCA cca3 = _deployThreeStepCCA();
-        UmiaValidationHook h = _newHook(admin, address(reclaim), signerAddress);
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
         vm.warp(block.timestamp + 1);
         vm.startPrank(admin);
         h.setCCA(address(cca3));
@@ -539,30 +521,16 @@ contract UmiaValidationHookVerifyEveryBidTest is UmiaValidationHookBase {
         hook.validate(0, 1, user, user, abi.encodePacked(uint256(0), earlyProof));
     }
 
-    function test_verifyEveryBid_cannotForgeProofEvenAfterPublicVerification() public {
+    function test_verifyEveryBid_cannotForgeSignatureOnAValidPayload() public {
         _verifyEveryBidSetup();
         bytes memory proofData = _createBidProof(user, PROVIDER_HASH_1, 1);
-        Reclaim.Proof memory proof = abi.decode(proofData, (Reclaim.Proof));
-        reclaim.verifyProof(proof);
-        // Even a consumed identifier must have valid signatures on the supplied payload.
+        ZkTlsVerifier.Proof memory proof = abi.decode(proofData, (ZkTlsVerifier.Proof));
         proof.signedClaim.signatures[0] = new bytes(65);
         vm.prank(address(mockCCA));
         vm.expectRevert();
         hook.validate(0, 1, user, user, abi.encodePacked(uint256(0), abi.encode(proof)));
         vm.prank(address(mockCCA));
         hook.validate(0, 1, user, user, abi.encodePacked(uint256(0), proofData));
-    }
-
-    function test_earlyBid_publicVerifierFrontRunCannotBlockBid() public {
-        bytes memory proofData = _createProofForUser(user);
-        Reclaim.Proof memory proof = abi.decode(proofData, (Reclaim.Proof));
-        vm.prank(makeAddr("mempool-observer"));
-        reclaim.verifyProof(proof);
-        vm.roll(step0Start);
-        vm.prank(address(mockCCA));
-        hook.validate(0, 1, user, user, abi.encodePacked(uint256(0), proofData));
-        assertTrue(hook.isVerified(0, user));
-        assertEq(hook.zkGlobalBidTotal(), 1);
     }
 
     function test_verifyEveryBid_observerCannotConsumeProofWithDustBid() public {

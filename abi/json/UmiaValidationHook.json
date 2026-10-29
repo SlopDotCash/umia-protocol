@@ -8,7 +8,7 @@
         "internalType": "address"
       },
       {
-        "name": "_reclaim",
+        "name": "_zktlsVerifier",
         "type": "address",
         "internalType": "address"
       },
@@ -505,19 +505,6 @@
   },
   {
     "type": "function",
-    "name": "reclaim",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract Reclaim"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "removeStepProviders",
     "inputs": [
       {
@@ -901,6 +888,19 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "zktlsVerifier",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract ZkTlsVerifier"
       }
     ],
     "stateMutability": "view"
@@ -1371,33 +1371,6 @@
         "name": "currentStep",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ECDSAInvalidSignature",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ECDSAInvalidSignatureLength",
-    "inputs": [
-      {
-        "name": "length",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ECDSAInvalidSignatureS",
-    "inputs": [
-      {
-        "name": "s",
-        "type": "bytes32",
-        "internalType": "bytes32"
       }
     ]
   },

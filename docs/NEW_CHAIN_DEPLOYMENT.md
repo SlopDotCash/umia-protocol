@@ -29,7 +29,7 @@ For upgrading a live deployment, see [UPGRADES.md](./UPGRADES.md).
 8. `UmiaHookV2(INITIAL_OWNER = UMIA_HOOK_DEPLOYER)` through CreateX at the salt-mined address
 9. `SpotLiquidityV2Code` (vault and ALM creation code) and
    `UmiaLBPFactoryV2(poolManager, hookV2, hub, code)`
-10. `Reclaim`, or an existing one (`RECLAIM_ADDRESS`)
+10. `ZkTlsVerifier(initialWitnesses, 1)`, or an existing one (`ZKTLS_VERIFIER_ADDRESS`)
 11. `hookV2.initialize(factoryV2, poolManager, hub)`; must be sent by `UMIA_HOOK_DEPLOYER`
 12. the MetaVesT singletons (`MetaVesTFactory`, `VestingAllocationFactory`, `TokenOptionFactory`,
     `RestrictedTokenFactory`, `UmiaTwapMilestoneCondition(TWAP_WINDOW)`), or existing ones
@@ -41,6 +41,8 @@ For upgrading a live deployment, see [UPGRADES.md](./UPGRADES.md).
 15. Operational roles: `setVestingAdmin`, `setVetoGuardian`, `setActiveLiquidityKeeper`, each
     only when its input is set
 16. `setApprovedMoneyToken(USDC_ADDRESS, true)` when `USDC_ADDRESS` is set
+17. `addNewEpoch` on a freshly deployed verifier until it reaches `ZKTLS_CLAIM_EPOCH`; last, so
+    no other deployment's address moves
 
 The deployer owns the hub and the beacon afterwards. Transferring ownership to a timelock is a
 separate, one-shot step (`script/DeployTimelock.s.sol`, see
@@ -85,7 +87,11 @@ Optional:
   When deploying a fresh factory, `PROTOCOL_FEE_CONTROLLER` reuses an existing zero-fee controller.
 - `AUCTION_STATE_LENS_ADDRESS`, `CCA_LENS_ADDRESS`, `CCA_EXIT_HELPER_ADDRESS`: reuse existing CCA
   read lenses and exit helper.
-- `RECLAIM_ADDRESS`: reuse an existing `Reclaim` verifier instead of deploying a new one.
+- `ZKTLS_VERIFIER_ADDRESS`: reuse an existing `ZkTlsVerifier` instead of deploying a new one.
+- `ZKTLS_WITNESS_ADDRESS` and `ZKTLS_WITNESS_HOST`: required when deploying a new verifier; the
+  approved Umia attestor's signer and WebSocket URL. The script validates them before broadcasting.
+- `ZKTLS_CLAIM_EPOCH`: the epoch the attestor signs (`ZKTLS_SHARED_ATTESTOR.claimEpoch`, default
+  1). A fresh verifier is advanced to it with the same witness.
 - `METAVEST_FACTORY` plus `VESTING_ALLOCATION_FACTORY`, `TOKEN_OPTION_FACTORY`,
   `RESTRICTED_TOKEN_FACTORY`, `TWAP_MILESTONE_CONDITION`: reuse the per-chain MetaVesT singletons;
   all five are read when `METAVEST_FACTORY` is set.
@@ -238,6 +244,11 @@ export UMIA_HOOK_V2_SALT=0x...      # from MineUmiaHookSalt.s.sol with HOOK_V2=t
 export USDC_ADDRESS=0x...
 export TWAP_WINDOW=2592000              # vesting TWAP condition window; required unless METAVEST_FACTORY is set
 
+# Approved attestor (ZKTLS_SHARED_ATTESTOR); required unless ZKTLS_VERIFIER_ADDRESS is set
+export ZKTLS_WITNESS_ADDRESS=0x...
+export ZKTLS_WITNESS_HOST=wss://attestor.zktls.umia.finance/ws
+export ZKTLS_CLAIM_EPOCH=2
+
 # Operational roles (separate from the owner). Supply the address, or set the
 # matching _UNSET_OK flag to record that leaving the capability off is deliberate.
 export VESTING_ADMIN=0x...
@@ -249,7 +260,7 @@ export CCA_FACTORY=0x...
 export PROTOCOL_FEE_CONTROLLER=0x...    # only read when CCA_FACTORY is unset
 export AUCTION_STATE_LENS_ADDRESS=0x...
 export CCA_LENS_ADDRESS=0x...
-export RECLAIM_ADDRESS=0x...
+export ZKTLS_VERIFIER_ADDRESS=0x...
 export CCA_EXIT_HELPER_ADDRESS=0x...
 export METAVEST_FACTORY=0x...           # when set, the four below are required too
 export VESTING_ALLOCATION_FACTORY=0x...
@@ -268,7 +279,25 @@ Notes:
 - Leave `METAVEST_FACTORY` unset to deploy fresh MetaVesT singletons and a
   `UmiaTwapMilestoneCondition(TWAP_WINDOW)`; the per-venture controller and adapter are created at
   launch (see [the MetaVesT integration](./metavest/README.md)).
-- Leave `RECLAIM_ADDRESS` unset to deploy a fresh `Reclaim` contract.
+- Leave `ZKTLS_VERIFIER_ADDRESS` unset to deploy a fresh `ZkTlsVerifier`. The deployer is its
+  initial owner and can later call `transferOwnership(multisig)` to hand over witness-epoch
+  administration. Reusing an existing deployment does not add ownership transfer to its bytecode.
+- For a fresh verifier, set `ZKTLS_WITNESS_ADDRESS` and `ZKTLS_WITNESS_HOST` to the approved
+  attestor's public values from `ZKTLS_SHARED_ATTESTOR` (`@umia/types`). The constructor takes
+  `(Witness[] initialWitnesses, uint8 minWitnesses)`; the script initializes a one-witness epoch
+  with threshold 1, then advances it to `ZKTLS_CLAIM_EPOCH` with the same witness. No public
+  Reclaim witness is trusted implicitly.
+- Proof verification accepts only the current epoch, including in the verifier's read-only
+  `validateProof` used by new hooks. Rotation immediately rejects earlier and zero-epoch proofs;
+  users must regenerate pending proofs. Standing hook registrations are unaffected. Existing
+  verifiers and hooks require redeployment to gain these changes.
+- New hooks require a verifier with `validateProof`, which returns authenticated parsed context.
+  Older verifiers are incompatible and have no fallback. Deploy the new verifier and hook before
+  creating the auction; hook deployment no longer needs a separately linked `Claims` library.
+- During rollout, review and update the deployment's authority address and code-hash pins against
+  the new verifier's compiled executable and observed chain state before publishing configuration.
+  `infra/devnet/zktls/authority.ts` pins the currently deployed verifier's executable hash and
+  rejects replacement bytecode until that pin is updated.
 - Leave `CCA_EXIT_HELPER_ADDRESS` unset to deploy a fresh `CCAExitHelper` (logged as
   `CCAExitHelper deployed at:`). It collapses a live out-bid auction exit into one transaction;
   nothing on-chain references it.
@@ -317,7 +346,7 @@ Core outputs printed by the script:
 - `UMIA_HOOK_V2_ADDRESS` (specific to this independent deployment)
 - `LBP_FACTORY_V2_ADDRESS`
 - `SPOT_LIQUIDITY_V2_CODE_ADDRESS`
-- `RECLAIM_ADDRESS`
+- `ZKTLS_VERIFIER_ADDRESS`
 - `UMIA_MARKET_STAKE_ADDRESS`
 - `start_block`: the block to index this deployment from
 
@@ -402,3 +431,5 @@ If you did not set `USDC_ADDRESS`, skip that call.
   `hookV2.poolManager() == POOL_MANAGER`
 - all printed addresses and `start_block` were recorded
 - onchain hub getters match the deployment output
+
+The zkTLS verifier was renamed from `Reclaim` with no input aliases; a set `RECLAIM_ADDRESS` stops the script. The renamed address-book keys retain existing addresses and do not imply a redeployment. See [the migration guide](ZKTLS_VERIFIER_MIGRATION.md) before reusing or replacing a verifier.
