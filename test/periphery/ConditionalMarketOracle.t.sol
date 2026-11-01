@@ -472,4 +472,73 @@ contract ConditionalMarketOracleTest is Test {
         assertEq(accepted, refTick);
         assertEq(int256(cumulative), int256(refCumulative));
     }
+
+    // ─── TickSlew path integration ───────────────────────────────────────
+
+    /// @dev Area of the slew path at scale `2 * rate`, stepped one second at a time.
+    function _slewAreaPerSecond(int256 tick, int256 target, uint256 dt, uint256 rate)
+        internal
+        pure
+        returns (int256 area, int256 end)
+    {
+        for (uint256 k = 0; k < dt; k++) {
+            int256 gap = target - tick;
+            uint256 distance = uint256(gap < 0 ? -gap : gap);
+            if (distance >= rate) {
+                int256 next = gap > 0 ? tick + int256(rate) : tick - int256(rate);
+                area += (tick + next) * int256(rate);
+                tick = next;
+            } else {
+                area += (tick + target) * int256(distance) + 2 * target * int256(rate - distance);
+                tick = target;
+            }
+        }
+        end = tick;
+    }
+
+    /// @notice One `advance` over an interval equals the same interval split at arbitrary points
+    ///         with cumulative and remainder carried, and both equal the per-second path.
+    function testFuzz_slewAreaIsExactUnderAnySplit(
+        int24 start,
+        int256 targetOffset,
+        uint24 rate,
+        uint16 remainder,
+        uint32 dt,
+        uint32[3] memory cuts
+    ) public pure {
+        start = int24(bound(int256(start), TickMath.MIN_TICK, TickMath.MAX_TICK));
+        rate = uint24(bound(uint256(rate), 1, 32_767));
+        remainder = uint16(bound(uint256(remainder), 0, 2 * uint256(rate) - 1));
+        dt = uint32(bound(uint256(dt), 0, 600));
+        // Targets inside and beyond the travel budget, so ramps end both mid-interval and mid-second.
+        int256 reach = int256(uint256(rate) * dt + rate);
+        int256 target = int256(start) + bound(targetOffset, -2 * reach, 2 * reach);
+        if (target < TickMath.MIN_TICK) target = TickMath.MIN_TICK;
+        if (target > TickMath.MAX_TICK) target = TickMath.MAX_TICK;
+
+        (int24 tick, int48 whole, uint16 rem) = TickSlew.advance(start, int24(target), dt, remainder, rate);
+
+        int24 splitTick = start;
+        int256 splitCumulative;
+        uint16 splitRem = remainder;
+        uint32 left = dt;
+        for (uint256 i = 0; i <= cuts.length; i++) {
+            uint32 piece = i == cuts.length ? left : uint32(bound(uint256(cuts[i]), 0, left));
+            left -= piece;
+            int48 delta;
+            (splitTick, delta, splitRem) = TickSlew.advance(splitTick, int24(target), piece, splitRem, rate);
+            splitCumulative += delta;
+        }
+        assertEq(splitTick, tick, "split tick");
+        assertEq(splitCumulative, int256(whole), "split cumulative");
+        assertEq(splitRem, rem, "split remainder");
+
+        (int256 refArea, int256 refEnd) = _slewAreaPerSecond(start, target, dt, rate);
+        assertEq(int256(tick), refEnd, "tick vs per-second path");
+        assertEq(
+            int256(whole) * int256(uint256(TickSlew.areaScale(rate))) + int256(uint256(rem)),
+            refArea + int256(uint256(remainder)),
+            "area vs per-second path"
+        );
+    }
 }

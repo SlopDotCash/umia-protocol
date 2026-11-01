@@ -287,11 +287,13 @@ contract DecisionMarketInvariantTest is DecisionMarketBase {
             // must hold after every op — the latter is what makes this fuzz catch a real-token leak.
             _verifyInvariant(marketId);
             _verifyGroundTruthSolvency(marketId);
+            _verifyExactConservation(marketId);
         }
 
         // Exercise the redemption paths where real tokens actually leave the core, then assert the
         // core can still cover the winning proposal's user claims (ground-truth solvency at settle).
         vm.warp(market.tradingEnd + 1);
+        (uint256 realVenture, uint256 realMoney,) = _marketSettlementState(marketId);
         mm.settleMarket(marketId);
 
         uint256 winner = mm.winningProposalByMarketId(marketId).proposalId;
@@ -308,10 +310,7 @@ contract DecisionMarketInvariantTest is DecisionMarketBase {
             "post-settle: core cannot cover winning money claims"
         );
 
-        vm.prank(bob);
-        try mm.claimSettlement(marketId) {} catch {}
-        vm.prank(charlie);
-        try mm.claimSettlement(marketId) {} catch {}
+        _verifySettlementReservation(marketId, winner, [ventureToken, moneyToken], [realVenture, realMoney]);
         mm.collectProtocolFees(marketId);
     }
 
@@ -353,6 +352,57 @@ contract DecisionMarketInvariantTest is DecisionMarketBase {
         vm.prank(bob);
         mm.claimSettlement(marketId);
         assertGt(IERC20(moneyToken).balanceOf(bob), balBefore, "claim pays out after atomic settle");
+    }
+
+    /// @dev With a single market the core's ERC-20 balances back exactly one market's real balances.
+    function _verifyExactConservation(uint256 _marketId) internal view {
+        Market memory market = _marketById(_marketId);
+        (uint256 realVenture, uint256 realMoney,) = _marketSettlementState(_marketId);
+        for (uint256 i = 0; i < market.proposalIds.length; i++) {
+            uint256 propId = market.proposalIds[i];
+            (uint256 reserve0, uint256 reserve1) = mm.cpmmStates(propId);
+            assertEq(
+                realVenture,
+                mm.userVirtualVentureSupply(propId) + reserve0 + _accruedFeeVenture(propId),
+                "venture real != user supply + reserve + fee"
+            );
+            assertEq(
+                realMoney,
+                mm.userVirtualMoneySupply(propId) + reserve1 + _accruedFeeMoney(propId),
+                "money real != user supply + reserve + fee"
+            );
+        }
+        assertEq(IERC20(hub.ventureTokenById(market.ventureId)).balanceOf(address(mm)), realVenture, "venture ERC20");
+        assertEq(IERC20(hub.ventureMoneyTokenById(market.ventureId)).balanceOf(address(mm)), realMoney, "money ERC20");
+    }
+
+    /// @dev Claims of every holder, the winning fees and the vault re-add fit in the real balance,
+    ///      leaving at most the 1 wei buffer plus 1 wei of LP flooring per claimant.
+    function _verifySettlementReservation(
+        uint256 _marketId,
+        uint256 winner,
+        address[2] memory tokens,
+        uint256[2] memory realBalances
+    ) internal {
+        (uint256 feeVenture, uint256 feeMoney) = mm.proposalFeeState(winner);
+        uint256[2] memory fees = [feeVenture, feeMoney];
+        uint256[2] memory before;
+        for (uint256 t = 0; t < 2; t++) {
+            before[t] = IERC20(tokens[t]).balanceOf(address(mm));
+        }
+
+        address[] memory holders = new address[](2);
+        holders[0] = bob;
+        holders[1] = charlie;
+        mm.claimSettlementFor(_marketId, holders);
+        assertEq(mm.userVirtualVentureSupply(winner) + mm.userVirtualMoneySupply(winner), 0, "unclaimed winner");
+
+        for (uint256 t = 0; t < 2; t++) {
+            uint256 reAdded = realBalances[t] - before[t];
+            uint256 paid = before[t] - IERC20(tokens[t]).balanceOf(address(mm));
+            assertLe(paid + fees[t] + reAdded, realBalances[t], "settlement reserved more than it holds");
+            assertLe(realBalances[t] - paid - fees[t] - reAdded, 3, "stranded dust");
+        }
     }
 
     function _minPerProposalBalance(address who, uint256[] memory proposalIds)
