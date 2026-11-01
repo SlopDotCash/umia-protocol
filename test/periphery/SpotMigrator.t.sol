@@ -15,6 +15,8 @@ import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {UmiaHub} from "../../src/core/UmiaHub.sol";
 import {IUmiaHub} from "../../src/interfaces/IUmiaHub.sol";
@@ -350,6 +352,73 @@ contract SpotMigratorTest is Deployers {
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             ZERO_BYTES
         );
+    }
+
+    /// @notice Migration conserves value and carries the V1 price for both currency orders and
+    ///         18/18, 18/6 and 6/18 decimals, at $0.05 per venture token.
+    function test_Migrate_ConservesValueAcrossOrderingsAndDecimals() public {
+        uint8[2][3] memory decimals = [[uint8(18), uint8(18)], [uint8(18), uint8(6)], [uint8(6), uint8(18)]];
+        for (uint256 i = 0; i < 6; i++) {
+            _migrateFreshPair(address(uint160(0x5000 + i)), i % 2 == 0, decimals[i / 2][0], decimals[i / 2][1]);
+        }
+    }
+
+    function _migrateFreshPair(address venture, bool ventureIs0, uint8 ventureDecimals, uint8 moneyDecimals) internal {
+        MockERC20 money = new MockERC20("M", "M", moneyDecimals);
+        MockERC20 ventureToken;
+        do {
+            ventureToken = new MockERC20("V", "V", ventureDecimals);
+        } while ((address(ventureToken) < address(money)) != ventureIs0);
+        vm.mockCall(venture, abi.encodeWithSignature("token()"), abi.encode(address(ventureToken)));
+        vm.mockCall(venture, abi.encodeWithSignature("moneyToken()"), abi.encode(address(money)));
+        vm.mockCall(venture, abi.encodeWithSignature("lbp()"), abi.encode(address(this)));
+
+        SpotLiquidityVault vault =
+            new SpotLiquidityVault(address(hub), venture, address(manager), V1_ADDR, FEE, SPACING);
+        (address c0, address c1) =
+            ventureIs0 ? (address(ventureToken), address(money)) : (address(money), address(ventureToken));
+        PoolKey memory key = PoolKey(Currency.wrap(c0), Currency.wrap(c1), FEE, SPACING, IHooks(V1_ADDR));
+        v1.registerPool(key, IUmiaHook.PoolConfig({launcher: address(0), venture: venture, operator: address(vault)}));
+        uint256 ventureAmount = 1_000_000 * 10 ** ventureDecimals;
+        uint256 moneyAmount = 50_000 * 10 ** moneyDecimals;
+        uint256 priceX192 = ventureIs0
+            ? FullMath.mulDiv(moneyAmount, 1 << 192, ventureAmount)
+            : FullMath.mulDiv(ventureAmount, 1 << 192, moneyAmount);
+        manager.initialize(key, uint160(Math.sqrt(priceX192)));
+        hub.registerSpotLiquidityVault(venture, address(vault));
+
+        ventureToken.mint(address(this), ventureAmount * 2);
+        money.mint(address(this), moneyAmount * 2);
+        ventureToken.approve(address(vault), type(uint256).max);
+        money.approve(address(vault), type(uint256).max);
+        ventureToken.approve(address(swapRouter), type(uint256).max);
+        money.approve(address(swapRouter), type(uint256).max);
+        vault.bootstrapFromLBP(ventureAmount, moneyAmount, venture);
+        for (uint256 i = 1; i <= 156; i++) {
+            vm.warp(vm.getBlockTimestamp() + 5 minutes);
+            bool ventureIn = i % 2 == 0;
+            _swap(key, ventureIn == ventureIs0, -int256((ventureIn ? ventureAmount : moneyAmount) / 1000));
+        }
+
+        migrator.prepare(venture);
+        (address newVault, address alm,) = migrator.prepared(venture);
+        (uint160 v1Price,,,) = manager.getSlot0(key.toId());
+        uint256 treasuryVenture = ventureToken.balanceOf(venture);
+        uint256 treasuryMoney = money.balanceOf(venture);
+
+        vm.startPrank(venture);
+        (uint256 v1Venture, uint256 v1Money) = vault.withdraw(vault.shareBalance(venture), 0, 0, address(migrator));
+        migrator.migrate(_params());
+        vm.stopPrank();
+
+        (uint160 v2Price,,,) = manager.getSlot0(SpotLiquidityVaultV2(newVault).getPoolKey().toId());
+        assertEq(v2Price, v1Price, "V2 price != V1 price");
+        (uint256 anchorVenture, uint256 anchorMoney) = SpotLiquidityVaultV2(newVault).totalAssets();
+        (uint256 activeVenture, uint256 activeMoney) = ActiveLiquidityManager(alm).totalAssets();
+        uint256 surplusVenture = ventureToken.balanceOf(venture) - treasuryVenture;
+        uint256 surplusMoney = money.balanceOf(venture) - treasuryMoney;
+        assertApproxEqAbs(anchorVenture + activeVenture + surplusVenture, v1Venture, 10, "venture not conserved");
+        assertApproxEqAbs(anchorMoney + activeMoney + surplusMoney, v1Money, 10, "money not conserved");
     }
 
     function test_Migrate_Gating() public {

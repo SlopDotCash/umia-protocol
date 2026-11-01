@@ -260,6 +260,38 @@ contract SpotLiquidityVaultV2Test is SpotLiquidityV2TestBase {
     }
 }
 
+/// @dev Starts with the oracle aged past the vault's 6-hour guard window.
+contract SpotLiquidityVaultV2RoundTripTest is SpotLiquidityV2TestBase {
+    function setUp() public override {
+        super.setUp();
+        _ageOracle(7 hours);
+    }
+
+    /// @notice Depositing and withdrawing every minted share never returns more than was put in,
+    ///         including when idle balances (fees, settlement leftovers) dominate the NAV.
+    function testFuzz_RoundTrip_NeverReturnsMoreThanDeposited(
+        uint256 ventureIn,
+        uint256 moneyIn,
+        uint256 idleVenture,
+        uint256 idleMoney
+    ) public {
+        _token0().mint(address(vault), bound(idleVenture, 0, 3_000_000 ether));
+        _token1().mint(address(vault), bound(idleMoney, 0, 3_000_000 ether));
+        ventureIn = bound(ventureIn, 1e3, 3_000_000 ether);
+        moneyIn = bound(moneyIn, 1e3, 3_000_000 ether);
+        uint256 ventureBefore = _token0().balanceOf(address(this));
+        uint256 moneyBefore = _token1().balanceOf(address(this));
+
+        (uint256 shares, uint256 ventureUsed, uint256 moneyUsed) = vault.deposit(ventureIn, moneyIn, 0, address(this));
+        (uint256 ventureOut, uint256 moneyOut) = vault.withdraw(shares, 0, 0, address(this));
+
+        assertLe(ventureOut, ventureUsed, "round trip returned more venture");
+        assertLe(moneyOut, moneyUsed, "round trip returned more money");
+        assertLe(_token0().balanceOf(address(this)), ventureBefore);
+        assertLe(_token1().balanceOf(address(this)), moneyBefore);
+    }
+}
+
 contract ActiveLiquidityManagerTest is SpotLiquidityV2TestBase {
     using StateLibrary for IPoolManager;
 

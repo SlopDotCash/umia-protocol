@@ -16,6 +16,8 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {FixedPoint96} from "@uniswap/v4-core/src/libraries/FixedPoint96.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {FixedPointMathLib} from "@solady/utils/FixedPointMathLib.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
@@ -34,6 +36,7 @@ import {IUmiaHub} from "../../src/interfaces/IUmiaHub.sol";
 import {IUmiaLBP} from "../../src/interfaces/IUmiaLBP.sol";
 import {ILBPMigrationCallback} from "../../src/interfaces/ILBPMigrationCallback.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
+import {MockLBPInitializer} from "../mocks/MockLBPInitializer.sol";
 
 /// @notice A fresh launch through `UmiaLBPV2` lands on `UmiaHookV2` with an anchor vault and an
 ///         empty ALM, no migration involved. The test contract stands in for the Hub and factory.
@@ -291,6 +294,68 @@ contract UmiaLBPV2Test is Test, PosmTestSetup {
         vm.prank(KEEPER);
         alm.rebalance(target);
         assertEq(alm.positions().length, 1);
+    }
+
+    /// @notice The pool opens within one tick of the clearing price for both currency orders and
+    ///         18/18, 18/6 and 6/18 decimals, at $0.05 per token.
+    function test_Migrate_InitPriceMatchesClearingPriceAcrossOrderingsAndDecimals() public {
+        uint8[2][3] memory decimals = [[uint8(18), uint8(18)], [uint8(18), uint8(6)], [uint8(6), uint8(18)]];
+        for (uint256 i = 0; i < 6; i++) {
+            _assertInitPriceAtClearing(i % 2 == 0, decimals[i / 2][0], decimals[i / 2][1]);
+        }
+    }
+
+    /// @dev Launches through a mocked initializer that reports `clearingPriceX96`, then migrates.
+    function _assertInitPriceAtClearing(bool currencyIs0, uint8 tokenDecimals, uint8 currencyDecimals) internal {
+        currency = new MockERC20("Currency", "CURR", currencyDecimals);
+        do {
+            token = new MockERC20("Project Token", "PROJ", tokenDecimals);
+        } while ((address(currency) < address(token)) != currencyIs0);
+        vm.mockCall(VENTURE, abi.encodeWithSignature("token()"), abi.encode(address(token)));
+        vm.mockCall(VENTURE, abi.encodeWithSignature("moneyToken()"), abi.encode(address(currency)));
+
+        uint128 supply = uint128(1_000_000 * 10 ** tokenDecimals);
+        uint256 clearingPriceX96 =
+            FullMath.mulDiv(5 * 10 ** currencyDecimals, FixedPoint96.Q96, 100 * 10 ** tokenDecimals);
+        lbp = new UmiaLBPV2(
+            address(token),
+            supply,
+            5_000_000,
+            address(currency),
+            "",
+            IPoolManager(address(manager)),
+            IUmiaHook(address(hookV2)),
+            VENTURE,
+            VENTURE_BPS,
+            code
+        );
+        vm.mockCall(VENTURE, abi.encodeWithSignature("lbp()"), abi.encode(address(lbp)));
+
+        uint256 sold = supply / 2;
+        uint256 raised = FullMath.mulDiv(sold, clearingPriceX96, FixedPoint96.Q96);
+        MockLBPInitializer cca = new MockLBPInitializer(raised, clearingPriceX96, address(currency), address(token));
+        cca.setFundsRecipient(address(lbp));
+        cca.setTokensRecipient(address(lbp));
+        cca.setEndBlock(uint64(block.number));
+        address ccaFactory_ = address(0xCCA);
+        vm.mockCall(address(this), abi.encodeWithSelector(IUmiaHub.ccaFactory.selector), abi.encode(ccaFactory_));
+        vm.mockCall(
+            ccaFactory_, abi.encodeWithSignature("create(address,uint256,bytes,bytes32)"), abi.encode(address(cca))
+        );
+        token.mint(address(lbp), supply);
+        lbp.onTokensReceived();
+        vm.prank(address(cca));
+        token.transfer(address(0xB1DD), sold);
+        currency.mint(address(cca), raised);
+        vm.roll(block.number + 100);
+        lbp.migrate();
+
+        _setPoolKey();
+        (, int24 tick,,) = manager.getSlot0(poolKey.toId());
+        uint256 referenceSqrtPrice = currencyIs0
+            ? Math.sqrt(FullMath.mulDiv(1 << 192, FixedPoint96.Q96, clearingPriceX96))
+            : Math.sqrt(clearingPriceX96 << FixedPoint96.RESOLUTION);
+        assertApproxEqAbs(tick, TickMath.getTickAtSqrtPrice(uint160(referenceSqrtPrice)), 1, "init tick off clearing");
     }
 
     function test_Factory_CreatesV2LbpsFromSharedCode() public {
