@@ -223,9 +223,9 @@ contract UmiaValidationHook is
         else _register(owner, proofStep, proof);
     }
 
-    /// @dev A credential serves a later step only when neither step verifies every bid.
+    /// @dev A credential serves a later step only when neither step verifies every bid and the earlier step is enabled.
     function _requireCredentialStep(bool everyBid, uint256 step, uint256 credentialStep, bool isPermit) private view {
-        if ((everyBid || _gates[credentialStep].everyBid) && credentialStep != step) {
+        if ((everyBid || _gates[credentialStep].everyBid || !_gates[credentialStep].enabled) && credentialStep != step) {
             revert CredentialStepMismatch(credentialStep, step);
         }
         if (credentialStep > step) {
@@ -259,7 +259,9 @@ contract UmiaValidationHook is
         HookProofValidation.validateRegistration(context.contextMessage, _cca);
         _verifyContext(user, step, context);
         bytes32 identifier = proof.signedClaim.claim.identifier;
-        _registrations[user] = Registration({active: true, fromStep: uint64(step)});
+        Registration storage existing = _registrations[user];
+        uint64 fromStep = existing.active && existing.fromStep < step ? existing.fromStep : uint64(step);
+        _registrations[user] = Registration({active: true, fromStep: fromStep});
         emit Registered(step, user);
         emit ProofVerified(user, step, identifier);
     }

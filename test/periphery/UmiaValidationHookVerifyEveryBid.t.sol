@@ -543,4 +543,25 @@ contract UmiaValidationHookVerifyEveryBidTest is UmiaValidationHookBase {
         hook.validate(0, 100, user, makeAddr("legitimate-relayer"), abi.encodePacked(uint256(0), proofData));
         assertEq(hook.zkGlobalBidTotal(), 100);
     }
+
+    function test_disabledEarlierStep_credentialCannotBypassLaterGatedStep() public {
+        MockCCA cca3 = _deployThreeStepCCA();
+        UmiaValidationHook h = _newHook(admin, address(zktlsVerifier), signerAddress);
+        vm.warp(block.timestamp + 1);
+        vm.startPrank(admin);
+        h.setCCA(address(cca3));
+        h.enableStep(0, _singleHash(PROVIDER_HASH_1), _singleId("provider-1"));
+        h.enableStepPermit(0);
+        h.setVerifyEveryBid(0, true);
+        h.enableStep(1, _singleHash(PROVIDER_HASH_2), _singleId("provider-2"));
+        h.disableStep(0);
+        vm.stopPrank();
+
+        vm.roll(200);
+        bytes memory staleProof =
+            abi.encodePacked(uint256(0), _createProofForUserWithProviderAndAuction(user, PROVIDER_HASH_1, address(cca3)));
+        vm.prank(address(cca3));
+        vm.expectRevert(abi.encodeWithSelector(UmiaValidationHook.CredentialStepMismatch.selector, uint256(0), uint256(1)));
+        h.validate(0, 1, user, user, staleProof);
+    }
 }

@@ -49,15 +49,15 @@ contract UmiaMarketStake is IUmiaMarketStake {
         if (minStake == 0) revert MarketStakeNotConfigured();
 
         MarketStake storage stake = marketStakes[ventureId][msg.sender];
-        if (stake.amount != 0) revert MarketStakeAlreadyDeposited();
+        if (stake.amount >= minStake) revert MarketStakeAlreadyDeposited();
+        uint256 depositAmount = minStake - stake.amount;
 
         address ventureToken = HUB.ventureTokenById(ventureId);
         if (ventureToken == address(0)) revert VentureNotFound();
-        IERC20(ventureToken).safeTransferFrom(msg.sender, address(this), minStake);
+        IERC20(ventureToken).safeTransferFrom(msg.sender, address(this), depositAmount);
 
         stake.amount = minStake;
-        stake.lockedUntil = 0;
-        emit MarketStakeDeposited(ventureId, msg.sender, minStake);
+        emit MarketStakeDeposited(ventureId, msg.sender, depositAmount);
     }
 
     /// @notice Withdraw a market stake deposit.
@@ -97,9 +97,11 @@ contract UmiaMarketStake is IUmiaMarketStake {
         if (minStake == 0) revert MarketStakeNotConfigured();
 
         MarketStake storage stake = marketStakes[ventureId][creator];
-        if (stake.amount != minStake) revert MarketStakeRequired();
+        if (stake.amount < minStake) revert MarketStakeRequired();
 
-        stake.lockedUntil = tradingEnd;
+        if (tradingEnd > stake.lockedUntil) {
+            stake.lockedUntil = tradingEnd;
+        }
         emit MarketStakeLocked(ventureId, creator, marketId, tradingEnd);
     }
 }

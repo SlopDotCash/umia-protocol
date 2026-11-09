@@ -84,11 +84,13 @@ contract YieldPositionGuardian is Ownable2Step {
             revert InvalidParams();
         }
 
+        uint256 balanceBefore = IERC20(aToken).balanceOf(address(this));
         uint256 pulled = IERC20(aToken).balanceOf(venture);
         if (amount < pulled) pulled = amount;
         IERC20(aToken).safeTransferFrom(venture, address(this), pulled);
+        uint256 redeemable = IERC20(aToken).balanceOf(address(this)) - balanceBefore;
 
-        uint256 received = IAaveV3Pool(pool).withdraw(asset, pulled, venture);
+        uint256 received = IAaveV3Pool(pool).withdraw(asset, redeemable < pulled ? redeemable : pulled, venture);
 
         emit GuardianExitAave(pool, asset, received, msg.sender);
     }
