@@ -18,6 +18,9 @@ export type ChainAddresses = {
 const asChains = (env: Environment) =>
   addresses[env] as unknown as Record<string, ChainAddresses | undefined>;
 
+const ownValue = <T>(values: Record<string, T> | undefined, name: string): T | undefined =>
+  values && Object.hasOwn(values, name) ? values[name] : undefined;
+
 /** Every chain configured for an environment, keyed by chain name. */
 export function getChains(env: Environment): Record<string, ChainAddresses> {
   return asChains(env) as Record<string, ChainAddresses>;
@@ -25,7 +28,7 @@ export function getChains(env: Environment): Record<string, ChainAddresses> {
 
 /** Addresses for one chain, by name (`"base"`, `"base-sepolia"`). */
 export function getChainAddresses(env: Environment, chainName: string): ChainAddresses | null {
-  return asChains(env)[chainName] ?? null;
+  return ownValue(asChains(env), chainName) ?? null;
 }
 
 /** Addresses for one chain, by id. Prefer this when you already hold a chain id. */
@@ -42,5 +45,5 @@ export function getChainAddressesById(env: Environment, chainId: number): ChainA
  */
 export function getContractAddress(env: Environment, chainId: number, name: string): string | null {
   const chain = getChainAddressesById(env, chainId);
-  return chain?.umia[name] ?? chain?.uniswap?.[name] ?? null;
+  return ownValue(chain?.umia, name) ?? ownValue(chain?.uniswap, name) ?? null;
 }

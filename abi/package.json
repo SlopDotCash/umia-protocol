@@ -40,7 +40,8 @@
     "addresses": "bun run src/gen-addresses.ts",
     "build": "tsc -p tsconfig.build.json && bun run fix-dist-extensions.ts",
     "codegen": "wagmi generate && bun run src/dump-json.ts && bun run src/gen-addresses.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test test"
   },
   "devDependencies": {
     "@types/node": "catalog:",
