@@ -22,10 +22,13 @@ GENERATED=(abi/addresses.json abi/src/generated-addresses.ts)
 # the diff below pass for the wrong reason.
 (cd abi && bun run src/gen-addresses.ts)
 
-if ! git diff --quiet -- "${GENERATED[@]}"; then
+# Include newly generated files and staged changes: a worktree-only diff can
+# report success even when the generated address book is absent from HEAD.
+generated_status=$(git status --porcelain --untracked-files=all -- "${GENERATED[@]}")
+if [ -n "$generated_status" ]; then
     echo "Published address book is out of date!"
     echo ""
-    git diff --stat -- "${GENERATED[@]}"
+    printf '%s\n' "$generated_status"
     echo ""
     echo "Run 'cd $PWD/abi && bun run addresses' and commit the result."
     exit 1
