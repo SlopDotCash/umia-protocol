@@ -1234,6 +1234,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
                 && interfaceId != type(IUmiaValidationHook).interfaceId
                 && interfaceId != type(IMaxBidPriceValidationHook).interfaceId
                 && interfaceId != type(IGatedValidationHook).interfaceId
+                && interfaceId != type(IVerifyEveryBidHook).interfaceId
         );
         assertFalse(hook.supportsInterface(interfaceId));
     }
