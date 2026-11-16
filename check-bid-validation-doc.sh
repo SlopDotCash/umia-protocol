@@ -29,8 +29,15 @@ sha256() {
 }
 
 # Paths are hashed with the monorepo prefix so the digest recorded in the page stays valid.
-current=$(for f in "${SOURCES[@]}"; do printf 'smart-contracts/%s\n' "$f"; cat "$f"; done | sha256 | cut -d' ' -f1)
-recorded=$(sed -n 's/.*bid-validation-source: \([0-9a-f]\{64\}\).*/\1/p' "$DOC")
+current=$(for f in "${SOURCES[@]}"; do printf 'smart-contracts/%s\n' "$f"; cat "$f" || exit 1; done | sha256 | cut -d' ' -f1)
+recorded=$(grep -o 'bid-validation-source: [0-9a-f]\{64\}' "$DOC" | sed 's/bid-validation-source: //' || true)
+
+# sed can exit successfully without replacing anything. Require one marker so
+# --update cannot claim success for a missing or ambiguous source digest.
+if ! [[ "$recorded" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "Expected exactly one bid-validation-source digest in $DOC" >&2
+    exit 1
+fi
 
 if [[ "${1:-}" == "--update" ]]; then
     sed -i.bak "s/bid-validation-source: [0-9a-f]\{64\}/bid-validation-source: $current/" "$DOC"
