@@ -2,7 +2,7 @@
  * Rewrites package.json for publication, in place. publish.sh reverts it with a
  * `git checkout` trap, so the committed manifest never carries these values.
  *
- * Two things change. The workspace name @umia/abi becomes the unscoped npm name
+ * The workspace name @umia/abi becomes the unscoped npm name
  * (the @umia scope is unavailable), and the entrypoints move from src/*.ts to
  * the compiled dist/. In-repo consumers resolve the TypeScript directly, but
  * published consumers cannot: Node refuses to type-strip inside node_modules
@@ -20,6 +20,9 @@ const pkg = JSON.parse(await readFile(MANIFEST, "utf-8"));
 pkg.name = "umia-abi";
 pkg.main = "./dist/index.js";
 pkg.types = "./dist/index.d.ts";
+// Build tools use monorepo-only catalog ranges. The compiled package needs
+// none of them, and Bun cannot resolve those ranges outside the workspace.
+delete pkg.devDependencies;
 pkg.exports = {
   ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
   "./contracts": { types: "./dist/contracts.d.ts", default: "./dist/contracts.js" },

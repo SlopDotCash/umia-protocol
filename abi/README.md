@@ -110,7 +110,7 @@ The three lists exist because solc doesn't always bubble errors from libraries a
 
 The script refuses to publish if `abi/` has uncommitted changes or if `bun run codegen` would produce a diff (i.e. the committed ABIs are stale). It then typechecks, compiles `src/` to `dist/`, and publishes as **`umia-abi`** with public access.
 
-Two manifest fields are publish-time only, applied by `publish-manifest.ts` and reverted by a trap in `publish.sh`: the `@umia/abi` workspace name becomes the unscoped `umia-abi`, and the entrypoints move from `src/*.ts` to `dist/*.js`. In-repo consumers resolve the TypeScript sources directly; published consumers can't, because Node refuses to type-strip inside `node_modules`.
+Publish-time manifest changes are applied by `publish-manifest.ts` and reverted by a trap in `publish.sh`: the `@umia/abi` workspace name becomes the unscoped `umia-abi`, the entrypoints move from `src/*.ts` to `dist/*.js`, and workspace-only dev dependencies are removed. In-repo consumers resolve the TypeScript sources directly; published consumers can't, because Node refuses to type-strip inside `node_modules`.
 
 Consumers install with `bun add umia-abi` (or `pnpm` / `npm`) and import either the typed TS barrel or the raw JSON files:
 
