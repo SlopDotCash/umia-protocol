@@ -1,4 +1,11 @@
 .certora_internal
 
+# Foundry build output and local compiler cache
+/out/
+/cache/
+
+# ABI package build output (including the publish retry stamp)
+/abi/dist/
+
 # forge script artifacts; the real deployments are recorded in contracts.json
 /broadcast/
